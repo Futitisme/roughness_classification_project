@@ -1,1 +1,3 @@
-# roughness_classification_project
+# What problem I'm solving?
+
+The objective of this project is to solve a **multi-class image classification problem**, where microscopic grayscale images of material surfaces must be assigned to one of several discrete surface roughness categories. The task is approached by training and comparing neural network models with progressively increasing representational capacity, starting from a linear baseline, moving to fully connected feed-forward networks, and finally employing convolutional neural networks designed to capture spatial and textural patterns. Each model is trained and evaluated under a unified experimental protocol, with systematic hyperparameter tuning based on validation performance, in order to analyze the trade-off between model complexity, classification accuracy, and computational cost.
