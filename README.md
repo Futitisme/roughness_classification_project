@@ -543,3 +543,199 @@ This allows a direct comparison of "cost vs quality" with the baseline linear mo
 The MLP section demonstrates a fully manual implementation of a multi-layer neural network (forward + backward + SGD), and a proper validation-based hyperparameter search.  
 Despite increasing depth, the MLP still underperforms strongly compared to CNNs, supporting the conclusion that spatial inductive biases (convolution/pooling) are essential for microscopy texture-based classification.
 
+
+## Model 3 — Convolutional Neural Network (CNN, PyTorch layers allowed)
+
+### Goal and motivation
+The first two models (softmax regression and MLP trained "from scratch") operate on **flattened pixels** and therefore struggle to capture **local texture patterns** (edges, repeated micro-structures, spatial frequency) that are crucial for microscopy-based surface roughness recognition. A CNN is specifically designed to exploit **spatial locality** and **translation invariance** through convolutional filters and pooling, so it is expected to outperform both linear and fully-connected baselines on texture classification.
+
+---
+
+## CNN architecture (lecture-style CNN)
+We implemented a standard CNN similar to the one discussed in the course:
+
+**Feature extractor (3 convolutional blocks):**
+1. `Conv2d(1 → 32, 3×3, padding=1)` → `ReLU` → `MaxPool2d(2)`
+2. `Conv2d(32 → 64, 3×3, padding=1)` → `ReLU` → `MaxPool2d(2)`
+3. `Conv2d(64 → 128, 3×3, padding=1)` → `ReLU` → `MaxPool2d(2)`
+
+**Classification head:**
+- `Flatten`
+- `Linear(128·8·8 → 256)` → `ReLU`
+- `Dropout(p=0.5)`
+- `Linear(256 → 16)`
+
+Because the input resolution is fixed at `64×64`, three pooling operations halve the spatial size each time:
+
+$$64 \times 64 \xrightarrow{\text{pool}/2} 32 \times 32 \xrightarrow{\text{pool}/2} 16 \times 16 \xrightarrow{\text{pool}/2} 8 \times 8$$
+
+Therefore the flattened feature vector has size:
+
+$$128 \cdot 8 \cdot 8 = 8192$$
+
+---
+
+## Mathematical formulation
+
+### Convolution layer
+A convolution layer applies a set of learnable kernels (filters). For an input tensor $x$ and a kernel $w$, each output feature map is computed as:
+
+$$z_{k}(i,j) = \sum_{c}\sum_{u,v} w_{k,c}(u,v)\,x_{c}(i+u, j+v) + b_k$$
+
+where:
+- $k$ is the output channel index,
+- $c$ is the input channel index,
+- $u,v$ iterate over the kernel spatial positions (here $3\times3$),
+- $b_k$ is the bias term.
+
+### ReLU activation
+
+$$\text{ReLU}(z)=\max(0,z)$$
+
+ReLU avoids saturation issues typical of sigmoid and improves gradient flow.
+
+### Max pooling
+Max pooling selects the maximum value in each spatial window (here $2\times2$):
+
+$$y(i,j)=\max_{(u,v)\in \text{window}} x(2i+u,2j+v)$$
+
+Pooling reduces resolution and provides local invariance, which is useful for texture variations and small shifts.
+
+### Final classifier + softmax cross-entropy
+The CNN produces **logits** $\mathbf{z} \in \mathbb{R}^{16}$. We train with multi-class softmax cross-entropy:
+
+$$p_c = \frac{e^{z_c}}{\sum_{j=1}^{16} e^{z_j}},\qquad \mathcal{L} = -\log p_{y}$$
+
+where $y$ is the true class label.
+
+---
+
+## Training setup and hyperparameter choices
+
+### Allowed PyTorch components (as requested)
+For the CNN, we used standard PyTorch modules and autograd (this was explicitly allowed):
+- `nn.Conv2d`, `nn.ReLU`, `nn.MaxPool2d`, `nn.Linear`, `nn.Dropout`
+- `nn.CrossEntropyLoss`
+- `torch.optim.Adam`
+- `loss.backward()` for gradients
+
+### Optimization
+We used Adam because it typically converges faster and more stably than vanilla SGD in CNN training:
+
+$$\theta_{t+1} = \theta_t - \alpha \cdot \frac{\hat{m}_t}{\sqrt{\hat{v}_t}+\epsilon}$$
+
+with bias-corrected first/second moment estimates $\hat{m}_t, \hat{v}_t$.
+
+### Regularization: dropout and weight decay
+- **Dropout** in the fully-connected head with $p=0.5$ reduces overfitting by randomly zeroing activations during training:
+
+$$h' = m \odot h,\quad m_i \sim \text{Bernoulli}(1-p)$$
+
+- **Weight decay** (L2 regularization) in Adam:
+
+$$\mathcal{L}' = \mathcal{L} + \lambda \|\theta\|_2^2$$
+
+helps prevent large weights and improves generalization.
+
+### Early stopping (selection criterion)
+To follow the course requirement of selecting hyperparameters based on validation performance, we used:
+- **early stopping** with **patience = 8**
+- validation metric: **Macro-F1**
+
+Macro-F1 is appropriate because it gives equal importance to all classes:
+
+$$\text{MacroF1}=\frac{1}{C}\sum_{c=1}^{C}F1_c$$
+
+---
+
+## Best CNN run (selected model)
+
+**Configuration**
+- Channels: `(32, 64, 128)`
+- Dropout: `0.5`
+- Optimizer: `Adam`
+- Learning rate: `1e-3`
+- Weight decay: `1e-4`
+- Max epochs: `60`
+- Early stopping patience: `8`
+
+**Early stopping result**
+- Best training epoch (highest val Macro-F1 during training): **epoch 31**
+- Training stopped at epoch 39 due to no improvement for 8 epochs.
+
+---
+
+## Final performance (from your run)
+
+### Validation set
+- **Accuracy:** 0.5972  
+- **Macro-F1:** 0.5944  
+- **Balanced Accuracy:** 0.5972  
+- **Top-2 Accuracy:** 0.8368  
+- **Loss:** 1.3328  
+
+### Test set
+- **Accuracy:** 0.5920  
+- **Macro-F1:** 0.5898  
+- **Balanced Accuracy:** 0.5920  
+- **Top-2 Accuracy:** 0.8247  
+- **Loss:** 1.3352  
+
+**Interpretation:** CNN dramatically improves over both pixel-based models because it learns discriminative local texture filters. The remaining generalization gap (train loss decreasing while val loss increases after the best epoch) is mitigated using dropout + weight decay + early stopping, but can be further improved with augmentation (see "possible improvements").
+
+---
+
+## Efficiency / performance metrics
+
+### Model size
+- **Parameters:** 2,194,192  
+- **Approx. size:** 8.37 MB (float32)
+
+### Training time
+- **Avg sec/epoch:** 21.70 s  
+- **Total training time:** 846.24 s (39 epochs executed)
+
+### Inference benchmark (test loader)
+- **Latency:** 4.05 ms / image  
+- **Throughput:** 246.78 images/sec  
+
+**Trade-off:** CNN is slower than shallow baselines, but the gain in Macro-F1 is very large, making it the best quality/cost trade-off for this task.
+
+---
+
+## What to include as figures in the report (placeholders)
+
+1. **CNN Learning Curves (train loss, val loss, val accuracy, val macro-F1, val top-2)**  
+   *Filename suggestion:* `cnn_learning_curves.png`
+
+2. **CNN Confusion Matrix (Validation)**  
+   *Filename suggestion:* `cnn_cm_val.png`
+
+3. **CNN Confusion Matrix (Test)**  
+   *Filename suggestion:* `cnn_cm_test.png`
+
+4. **CNN Per-class F1 (Test)**  
+   *Filename suggestion:* `cnn_f1_per_class_test.png`
+
+5. **Quality vs Performance plot** (e.g., Macro-F1 vs inference latency across models)  
+   *Filename suggestion:* `quality_vs_latency.png`
+
+---
+
+## Notes for professor-oriented discussion (why CNN works)
+- Softmax regression assumes a **linear decision boundary in pixel space** and cannot represent texture patterns.
+- MLP can represent non-linear boundaries, but flattening destroys spatial structure and the model lacks inductive bias for locality.
+- CNN encodes the right inductive biases:
+  - local receptive fields → learns micro-structures,
+  - shared weights → detects patterns anywhere in the image,
+  - pooling → robustness to small spatial shifts,
+  - deeper hierarchy → edges → motifs → texture signatures.
+
+---
+
+## Possible improvements (optional extensions for discussion)
+If required, we can additionally test:
+- **Data augmentation** (small rotations, random crops, flips, brightness/contrast jitter) to improve generalization.
+- **Batch normalization** after conv layers to stabilize optimization.
+- Larger grids: alternative channel widths, dropout values, Adam vs SGD+momentum.
+- Higher input resolution (e.g., 96×96) to preserve more texture detail (at higher compute cost).
