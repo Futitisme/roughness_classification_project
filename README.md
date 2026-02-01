@@ -624,7 +624,7 @@ We used Adam because it typically converges faster and more stably than vanilla 
 
 $$\theta_{t+1} = \theta_t - \alpha \cdot \frac{\hat{m}_t}{\sqrt{\hat{v}_t}+\epsilon}$$
 
-with bias-corrected first/second moment estimates $\hat{m}_t, \hat{v}_t$.
+with bias-corrected first/second moment estimates $\hat{m}_t,\hat{v}_t$.
 
 ### Regularization: dropout and weight decay
 - **Dropout** in the fully-connected head with $p=0.5$ reduces overfitting by randomly zeroing activations during training:
