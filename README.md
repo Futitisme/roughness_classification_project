@@ -270,3 +270,149 @@ The data preparation pipeline produces:
 - **Unified evaluation interface** with metrics computed from scratch
 
 This architecture-agnostic representation serves as the foundation for training and comparing all models in subsequent sections.
+
+
+## Softmax Regression (Linear Baseline)
+
+### Motivation and role in the project
+
+As a first step, we implemented **Softmax Regression** as a **linear baseline model**.  
+The purpose of this model is not to achieve high accuracy, but to establish a **reference point** for the task difficulty and to quantify how much performance gain is obtained when increasing model capacity (MLP and CNN).
+
+Softmax Regression is the **simplest discriminative model** suitable for multi-class classification. It assumes that the classes are **linearly separable** in the input space and does not exploit any spatial structure of the images. For this reason, it provides a meaningful lower bound on performance for image-based tasks.
+
+---
+
+### Model definition
+
+Each input image is first flattened into a vector:
+\[
+\mathbf{x} \in \mathbb{R}^{D}, \quad D = H \cdot W
+\]
+
+The model computes class scores (logits) using a single linear transformation:
+\[
+\mathbf{z} = \mathbf{W}^\top \mathbf{x} + \mathbf{b}, \quad \mathbf{W} \in \mathbb{R}^{D \times C}, \ \mathbf{b} \in \mathbb{R}^{C}
+\]
+
+where \( C = 16 \) is the number of surface roughness classes.
+
+The logits are converted into class probabilities using the **softmax function**:
+\[
+p(y=c \mid \mathbf{x}) = \frac{e^{z_c}}{\sum_{j=1}^{C} e^{z_j}}
+\]
+
+This formulation ensures that the output is a valid categorical distribution over the classes.
+
+---
+
+### Loss function
+
+We trained the model using the **categorical cross-entropy loss**, implemented from scratch in a numerically stable way:
+\[
+\mathcal{L} = -\frac{1}{B} \sum_{n=1}^{B} \log p(y_n \mid \mathbf{x}_n)
+\]
+
+To avoid numerical instability, the loss is computed directly from logits using the log-sum-exp trick:
+\[
+\log p_{n,c} = z_{n,c} - \log \sum_{j=1}^{C} e^{z_{n,j}}
+\]
+
+---
+
+### Optimization and regularization
+
+All components of the training procedure were implemented **from scratch using PyTorch tensors**, without relying on high-level modules such as `nn.Linear` or `nn.CrossEntropyLoss`.
+
+Training was performed using **mini-batch gradient descent**, with the following gradient expressions:
+\[
+\frac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^\top (\mathbf{P} - \mathbf{Y}), \quad
+\frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_{n} (\mathbf{P}_n - \mathbf{Y}_n)
+\]
+
+where:
+- \( \mathbf{P} \) is the matrix of predicted probabilities,
+- \( \mathbf{Y} \) is the one-hot encoding of the ground-truth labels.
+
+We optionally applied **L2 weight decay**:
+\[
+\mathbf{W} \leftarrow \mathbf{W} - \eta (\nabla \mathbf{W} + \lambda \mathbf{W})
+\]
+
+---
+
+### Hyperparameter search (cross-validation)
+
+To comply with the course requirements, we performed a **systematic grid search** over the main hyperparameters:
+
+- Number of epochs: \(\{5, 10, 20, 35\}\)
+- Learning rate: \(\{10^{-2}, 3\cdot10^{-3}, 10^{-3}\}\)
+- Weight decay: \(\{0, 10^{-4}, 10^{-3}\}\)
+
+For each configuration, the model was trained from scratch and evaluated on the **validation set**.  
+The selection criterion was the **best validation Macro-F1 score across epochs**, which is more informative than accuracy for multi-class problems.
+
+**Figure:** *Grid search results — Best validation Macro-F1 across all configurations*  
+**Figure:** *Heatmaps of validation Macro-F1 for different learning rates and weight decay values*
+
+---
+
+### Learning dynamics
+
+For the best configuration, we monitored training and validation metrics across epochs:
+
+- Training loss
+- Validation loss
+- Validation accuracy
+- Validation Macro-F1
+- Validation Top-2 accuracy
+
+**Figure:** *Learning curves for Softmax Regression (loss, accuracy, Macro-F1)*
+
+These curves show fast convergence and limited capacity to further improve performance, as expected from a linear model.
+
+---
+
+### Final performance
+
+The best hyperparameter configuration was:
+- Epochs: 35  
+- Learning rate: 0.01  
+- Weight decay: \(10^{-4}\)
+
+Final metrics:
+
+- **Validation set**  
+  - Accuracy: ≈ 0.11  
+  - Macro-F1: ≈ 0.08  
+
+- **Test set**  
+  - Accuracy: ≈ 0.13  
+  - Macro-F1: ≈ 0.10  
+
+**Figure:** *Confusion matrix on the test set*  
+**Figure:** *Per-class F1 scores on the test set*
+
+The confusion matrix shows that the model struggles to separate most classes, confirming that linear decision boundaries are insufficient for this texture-based classification task.
+
+---
+
+### Computational efficiency
+
+Despite low predictive performance, Softmax Regression is extremely efficient:
+
+- Number of parameters: ~65k  
+- Model size: ~0.25 MB  
+- Inference latency: < 1 ms per image  
+
+**Figure:** *Quality vs performance (Macro-F1 vs inference latency)*
+
+This highlights the trade-off between model simplicity and representational power.
+
+---
+
+### Summary
+
+Softmax Regression serves as a **transparent, fully controlled baseline**, implemented entirely from scratch.  
+Its poor performance relative to deeper models demonstrates that surface roughness classification from microscopy images requires **non-linear feature extraction** and **spatial inductive biases**, motivating the use of MLPs and convolutional neural networks in the subsequent sections.
+
