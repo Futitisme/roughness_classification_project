@@ -38,11 +38,11 @@ To ensure reproducibility and simplify downstream processing, the entire dataset
 Class names are sorted alphabetically and mapped to integer indices:
 
 $$
-\text{class\_to\_idx} : \text{class\_name} \rightarrow \{0, \dots, 15\}
+\texttt{class\_to\_idx} : \texttt{class\_name} \rightarrow \{0, \dots, 15\}
 $$
 
 $$
-\text{label}_i = \text{class\_to\_idx}(\text{class\_name}_i)
+\texttt{label}_i = \texttt{class\_to\_idx}(\texttt{class\_name}_i)
 $$
 
 Core implementation:
@@ -114,7 +114,7 @@ For each image $I$:
 1. **Grayscale conversion**
 
 $$
-I \leftarrow \text{to\_grayscale}(I)
+I \leftarrow \texttt{to\_grayscale}(I)
 $$
 
 2. **Resize to fixed resolution**
