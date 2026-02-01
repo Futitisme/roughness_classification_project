@@ -271,7 +271,6 @@ The data preparation pipeline produces:
 
 This architecture-agnostic representation serves as the foundation for training and comparing all models in subsequent sections.
 
-
 ## Softmax Regression (Linear Baseline)
 
 ### Motivation and role in the project
@@ -286,21 +285,24 @@ Softmax Regression is the **simplest discriminative model** suitable for multi-c
 ### Model definition
 
 Each input image is first flattened into a vector:
-\[
+
+$$
 \mathbf{x} \in \mathbb{R}^{D}, \quad D = H \cdot W
-\]
+$$
 
 The model computes class scores (logits) using a single linear transformation:
-\[
-\mathbf{z} = \mathbf{W}^\top \mathbf{x} + \mathbf{b}, \quad \mathbf{W} \in \mathbb{R}^{D \times C}, \ \mathbf{b} \in \mathbb{R}^{C}
-\]
 
-where \( C = 16 \) is the number of surface roughness classes.
+$$
+\mathbf{z} = \mathbf{W}^\top \mathbf{x} + \mathbf{b}, \quad \mathbf{W} \in \mathbb{R}^{D \times C}, \ \mathbf{b} \in \mathbb{R}^{C}
+$$
+
+where $C = 16$ is the number of surface roughness classes.
 
 The logits are converted into class probabilities using the **softmax function**:
-\[
+
+$$
 p(y=c \mid \mathbf{x}) = \frac{e^{z_c}}{\sum_{j=1}^{C} e^{z_j}}
-\]
+$$
 
 This formulation ensures that the output is a valid categorical distribution over the classes.
 
@@ -309,14 +311,16 @@ This formulation ensures that the output is a valid categorical distribution ove
 ### Loss function
 
 We trained the model using the **categorical cross-entropy loss**, implemented from scratch in a numerically stable way:
-\[
+
+$$
 \mathcal{L} = -\frac{1}{B} \sum_{n=1}^{B} \log p(y_n \mid \mathbf{x}_n)
-\]
+$$
 
 To avoid numerical instability, the loss is computed directly from logits using the log-sum-exp trick:
-\[
+
+$$
 \log p_{n,c} = z_{n,c} - \log \sum_{j=1}^{C} e^{z_{n,j}}
-\]
+$$
 
 ---
 
@@ -325,19 +329,21 @@ To avoid numerical instability, the loss is computed directly from logits using 
 All components of the training procedure were implemented **from scratch using PyTorch tensors**, without relying on high-level modules such as `nn.Linear` or `nn.CrossEntropyLoss`.
 
 Training was performed using **mini-batch gradient descent**, with the following gradient expressions:
-\[
+
+$$
 \frac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^\top (\mathbf{P} - \mathbf{Y}), \quad
 \frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_{n} (\mathbf{P}_n - \mathbf{Y}_n)
-\]
+$$
 
 where:
-- \( \mathbf{P} \) is the matrix of predicted probabilities,
-- \( \mathbf{Y} \) is the one-hot encoding of the ground-truth labels.
+- $\mathbf{P}$ is the matrix of predicted probabilities,
+- $\mathbf{Y}$ is the one-hot encoding of the ground-truth labels.
 
 We optionally applied **L2 weight decay**:
-\[
+
+$$
 \mathbf{W} \leftarrow \mathbf{W} - \eta (\nabla \mathbf{W} + \lambda \mathbf{W})
-\]
+$$
 
 ---
 
@@ -345,9 +351,9 @@ We optionally applied **L2 weight decay**:
 
 To comply with the course requirements, we performed a **systematic grid search** over the main hyperparameters:
 
-- Number of epochs: \(\{5, 10, 20, 35\}\)
-- Learning rate: \(\{10^{-2}, 3\cdot10^{-3}, 10^{-3}\}\)
-- Weight decay: \(\{0, 10^{-4}, 10^{-3}\}\)
+- Number of epochs: $\{5, 10, 20, 35\}$
+- Learning rate: $\{10^{-2}, 3\cdot10^{-3}, 10^{-3}\}$
+- Weight decay: $\{0, 10^{-4}, 10^{-3}\}$
 
 For each configuration, the model was trained from scratch and evaluated on the **validation set**.  
 The selection criterion was the **best validation Macro-F1 score across epochs**, which is more informative than accuracy for multi-class problems.
@@ -378,7 +384,7 @@ These curves show fast convergence and limited capacity to further improve perfo
 The best hyperparameter configuration was:
 - Epochs: 35  
 - Learning rate: 0.01  
-- Weight decay: \(10^{-4}\)
+- Weight decay: $10^{-4}$
 
 Final metrics:
 
@@ -415,4 +421,3 @@ This highlights the trade-off between model simplicity and representational powe
 
 Softmax Regression serves as a **transparent, fully controlled baseline**, implemented entirely from scratch.  
 Its poor performance relative to deeper models demonstrates that surface roughness classification from microscopy images requires **non-linear feature extraction** and **spatial inductive biases**, motivating the use of MLPs and convolutional neural networks in the subsequent sections.
-
