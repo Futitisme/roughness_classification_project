@@ -739,3 +739,21 @@ If required, we can additionally test:
 - **Batch normalization** after conv layers to stabilize optimization.
 - Larger grids: alternative channel widths, dropout values, Adam vs SGD+momentum.
 - Higher input resolution (e.g., 96×96) to preserve more texture detail (at higher compute cost).
+
+
+## Conclusion
+
+In this project, we systematically compared three neural architectures of increasing complexity—**Softmax Regression**, **Deep MLP**, and **Convolutional Neural Network (CNN)**—on the same image classification task, using a unified data pipeline, consistent evaluation metrics, and validation-driven model selection.
+
+We began with **Softmax Regression**, implemented fully *from scratch*, including the forward pass, softmax normalization, cross-entropy loss, and manual gradient updates. As shown in **“Test Macro-F1 / Accuracy / Top-2 barplots”** and **“Softmax Regression — Test Confusion Matrix”**, this linear model achieved the lowest performance. This outcome is expected, since softmax regression operates on flattened pixels and can only learn linear decision boundaries, making it fundamentally limited for texture-rich image data.
+
+Next, we evaluated a **Deep MLP (Sigmoid)**, also implemented *from scratch*, including manual forward and backward propagation. Multiple architectures, learning rates, depths, and regularization settings were explored via grid search, and the best configuration was selected using validation Macro-F1. The improvement over softmax regression is clearly visible in **“Test Macro-F1 / Accuracy / Top-2 barplots”** and **“Deep MLP — Test Confusion Matrix”**. However, **“Per-class F1 (TEST) — all models”** highlights that class-wise performance remains unstable. This confirms that, although non-linear, the MLP still lacks spatial inductive bias because the image is flattened before processing.
+
+Finally, the **CNN** achieved the best overall performance. Using convolutional layers with pooling, dropout, and early stopping, the model was able to exploit local spatial patterns and hierarchical features. This advantage is evident in **“Test Macro-F1 / Accuracy / Top-2 barplots”**, where CNN clearly outperforms the other models, and in **“CNN — Test Confusion Matrix”**, which shows more concentrated mass along the diagonal. The training dynamics are illustrated in **“Validation Macro-F1 — learning curves”** and **“Validation Loss — learning curves”**, demonstrating stable convergence and effective regularization. Although CNN introduces a significantly larger parameter count and inference cost, this trade-off is visualized in **“Params / Size / Latency barplots”** and **“Quality vs Performance”**, where CNN delivers the best accuracy at the expense of higher latency.
+
+Overall, the results confirm the theoretical expectations:  
+- Linear models are insufficient for complex visual tasks.  
+- Fully connected networks benefit from non-linearity but struggle without spatial structure.  
+- Convolutional architectures provide the best balance between representation power and generalization for image data.
+
+Thus, the CNN represents the most appropriate model for this task, while the softmax regression and MLP serve as valuable baselines that demonstrate the importance of architectural inductive biases in deep learning.
