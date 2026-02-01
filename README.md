@@ -39,10 +39,6 @@ To ensure reproducibility and simplify downstream processing, all images were in
 
 Class names are sorted alphabetically and mapped to consecutive integers:
 
-$$
-f: \texttt{class\_name} \rightarrow \{0, 1, \ldots, 15\}
-$$
-
 ```python
 class_names = sorted(df["class_name"].unique())
 class_to_idx = {cls: i for i, cls in enumerate(class_names)}
