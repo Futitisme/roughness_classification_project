@@ -243,7 +243,14 @@ To comply with the course requirements, we performed a **systematic grid search*
 For each configuration, the model was trained from scratch and evaluated on the **validation set**.  
 The selection criterion was the **best validation Macro-F1 score across epochs**, which is more informative than accuracy for multi-class problems.
 
+
+<img width="1083" height="394" alt="Screenshot 2026-02-02 at 2 43 51 PM" src="https://github.com/user-attachments/assets/1909efff-13ed-437b-90c9-aec92b6c3b06" />
 **Figure:** *Grid search results — Best validation Macro-F1 across all configurations*  
+
+<img width="591" height="391" alt="Screenshot 2026-02-02 at 2 44 44 PM" src="https://github.com/user-attachments/assets/b9efc0ff-367a-4ad2-88a3-490319aff335" />
+<img width="602" height="394" alt="Screenshot 2026-02-02 at 2 44 59 PM" src="https://github.com/user-attachments/assets/52ee7f34-8681-4ce7-914f-34aebdf4e1a0" />
+<img width="592" height="387" alt="Screenshot 2026-02-02 at 2 45 15 PM" src="https://github.com/user-attachments/assets/4977315a-4a46-44b0-8506-57b84b4fbc85" />
+<img width="566" height="385" alt="Screenshot 2026-02-02 at 2 45 30 PM" src="https://github.com/user-attachments/assets/bbefd806-d191-442e-a991-a6d500f0d4d5" />
 **Figure:** *Heatmaps of validation Macro-F1 for different learning rates and weight decay values*
 
 ---
@@ -258,6 +265,8 @@ For the best configuration, we monitored training and validation metrics across 
 - Validation Macro-F1
 - Validation Top-2 accuracy
 
+
+<img width="1131" height="277" alt="Screenshot 2026-02-02 at 2 46 18 PM" src="https://github.com/user-attachments/assets/7883a14b-91e5-4c5c-8571-9bdff6d8bbc3" />
 **Figure:** *Learning curves for Softmax Regression (loss, accuracy, Macro-F1)*
 
 These curves show fast convergence and limited capacity to further improve performance, as expected from a linear model.
@@ -279,9 +288,12 @@ Final metrics:
 
 - **Test set**  
   - Accuracy: ≈ 0.13  
-  - Macro-F1: ≈ 0.10  
+  - Macro-F1: ≈ 0.10
 
+ 
+<img width="455" height="491" alt="Screenshot 2026-02-02 at 2 47 00 PM" src="https://github.com/user-attachments/assets/2c985f07-3f8a-4ec9-ada5-6a9eca631dd8" />
 **Figure:** *Confusion matrix on the test set*  
+<img width="669" height="231" alt="Screenshot 2026-02-02 at 2 48 25 PM" src="https://github.com/user-attachments/assets/d4a15c98-e365-4e57-9655-db9cc04d2dc7" />
 **Figure:** *Per-class F1 scores on the test set*
 
 The confusion matrix shows that the model struggles to separate most classes, confirming that linear decision boundaries are insufficient for this texture-based classification task.
