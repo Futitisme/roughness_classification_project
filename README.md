@@ -1,43 +1,34 @@
-# What problem I'm solving?
+# Surface Roughness Classification using Neural Networks
 
-The objective of this project is to solve a **multi-class image classification problem**, where microscopic grayscale images of material surfaces must be assigned to one of several discrete surface roughness categories. The task is approached by training and comparing neural network models with progressively increasing representational capacity, starting from a **linear baseline**, moving to fully connected **feed-forward network**, and finally employing **convolutional neural network** designed to capture spatial and textural patterns. Each model is trained and evaluated under a unified experimental protocol, with systematic hyperparameter tuning based on validation performance, in order to analyze the trade-off between model complexity, classification accuracy, and computational cost.
+## Project Overview
 
+This project solves a **multi-class image classification problem**: classifying microscopic grayscale images of material surfaces into 16 discrete roughness categories. We compare three neural network architectures with increasing representational power:
 
-# Data Preparation
+1. **Softmax Regression** (linear baseline, implemented from scratch)
+2. **Multi-Layer Perceptron** (MLP with sigmoid activation, implemented from scratch)
+3. **Convolutional Neural Network** (CNN, using PyTorch layers)
 
-This section describes the input data and the preprocessing pipeline applied before training the models. The objective is to obtain a clean, reproducible, and architecture-agnostic data representation suitable for all model types.
+Each model is trained and evaluated under a unified experimental protocol with systematic hyperparameter tuning based on validation performance.
 
 ---
 
-## 1. Raw Data
+# Data Preparation
 
-The dataset used in this project is the **Surface Roughness Classification** dataset from Kaggle. It contains microscopy images of machined surfaces organized into folders by roughness class.
+## Raw Data
 
-**Dataset characteristics:**
+The dataset is the **Surface Roughness Classification** dataset from Kaggle containing microscopy images of machined surfaces.
 
 | Property | Value |
 |----------|-------|
 | Total images | 3840 |
 | Number of classes | 16 |
-| Images per class | 240 (perfectly balanced) |
+| Images per class | 240 (balanced) |
 | Image format | JPEG |
 | Class labels | `00`, `03`, `06`, ..., `45` |
 
-The folder-based structure allows class labels to be inferred directly from file paths. Each folder name represents a discrete roughness level, making this a **multi-class classification problem** where each image belongs to exactly one class.
+## Label Encoding
 
----
-
-## 2. Dataset Indexing and Label Encoding
-
-To ensure reproducibility and simplify downstream processing, all images were indexed into a single Pandas DataFrame containing:
-
-- `path` — absolute path to the image file
-- `class_name` — string class identifier (folder name)
-- `label` — integer-encoded class index $\in [0, 15]$
-
-### Label Mapping
-
-Class names are sorted alphabetically and mapped to consecutive integers:
+Class names are sorted and mapped to integers 0-15:
 
 ```python
 class_names = sorted(df["class_name"].unique())
@@ -45,13 +36,9 @@ class_to_idx = {cls: i for i, cls in enumerate(class_names)}
 df["label"] = df["class_name"].map(class_to_idx)
 ```
 
-This deterministic mapping ensures that all models operate on identically labeled data across experiments.
+## Train / Validation / Test Split
 
----
-
-## 3. Train / Validation / Test Split
-
-The dataset was divided into three disjoint subsets with a **stratified split** to preserve the class distribution in each subset:
+The dataset is split with **stratified sampling** to preserve class distribution:
 
 | Subset | Proportion | Images | Per class |
 |--------|------------|--------|-----------|
@@ -59,78 +46,25 @@ The dataset was divided into three disjoint subsets with a **stratified split** 
 | Validation | 15% | 576 | 36 |
 | Test | 15% | 576 | 36 |
 
-### Split Procedure
-
-The split is performed in two stages:
-
-1. **Extract test set** (15% of total):
-
-$$
-\mathcal{D}_{\text{test}} \sim 0.15 \cdot \mathcal{D}
-$$
-
-2. **Split remaining data** into training and validation sets. Since the validation set should be 15% of the original dataset and 85% remains after extracting the test set:
-
-$$
-\frac{|\mathcal{D}_{\text{val}}|}{|\mathcal{D}_{\text{train}} \cup \mathcal{D}_{\text{val}}|} = \frac{0.15}{0.85} \approx 0.176
-$$
-
 ```python
 df_trainval, df_test = train_test_split(
     df, test_size=0.15, stratify=df["label"], random_state=SEED
 )
 
-val_ratio = 0.15 / 0.85
+val_ratio = 0.15 / 0.85  # ≈ 0.176
 df_train, df_val = train_test_split(
     df_trainval, test_size=val_ratio, stratify=df_trainval["label"], random_state=SEED
 )
 ```
 
-**Stratification** ensures that each subset contains the same proportion of samples from every class, preventing biased evaluation and enabling fair model comparison.
+## Image Preprocessing
 
----
+All images undergo uniform preprocessing:
 
-## 4. Image Preprocessing
-
-All images undergo a uniform preprocessing pipeline to produce tensors compatible with any model architecture.
-
-### Preprocessing Steps
-
-For each image $I$:
-
-**Step 1. Grayscale conversion**
-
-$$
-I \leftarrow \texttt{grayscale}(I)
-$$
-
-Color information is discarded since surface texture is the primary discriminative feature.
-
-**Step 2. Resize to fixed resolution**
-
-$$
-I \leftarrow \texttt{resize}(I, (H, W)), \quad H = W = 64
-$$
-
-A fixed spatial resolution of $64 \times 64$ pixels is required for batching and ensures consistent input dimensions across all models.
-
-**Step 3. Intensity normalization**
-
-$$
-X = \frac{I}{255}, \quad X \in [0, 1]^{H \times W}
-$$
-
-Pixel values are scaled from integer range $[0, 255]$ to floating-point range $[0, 1]$. This normalization stabilizes gradient flow during training.
-
-**Step 4. Channel dimension**
-
-$$
-X \in \mathbb{R}^{1 \times H \times W}
-$$
-
-A channel dimension is added to conform to the PyTorch tensor format (C, H, W).
-
-### Implementation
+1. **Grayscale conversion** — color information is discarded since surface texture is the primary discriminative feature
+2. **Resize to 64×64** — fixed resolution for batching
+3. **Normalize to [0, 1]** — pixel values scaled from [0, 255] to floating-point [0, 1]
+4. **Add channel dimension** — shape becomes (1, 64, 64) for PyTorch
 
 ```python
 img = Image.open(path).convert("L")  # grayscale
@@ -140,634 +74,624 @@ x = torch.from_numpy(arr).unsqueeze(0)  # shape: (1, H, W)
 y = torch.tensor(label, dtype=torch.long)
 ```
 
-The final tensor `x` has shape $(1, 64, 64)$ with values in $[0, 1]$, and `y` is a scalar class index.
+---
+
+# Model 1: Softmax Regression (Linear Baseline)
+
+## Motivation
+
+Softmax Regression is the **simplest discriminative model** for multi-class classification. It assumes classes are **linearly separable** in pixel space and does not exploit spatial structure. This establishes a **lower bound** on performance.
+
+## Mathematical Formulation
+
+### Forward Pass
+
+Each image is flattened into a vector $\mathbf{x} \in \mathbb{R}^{D}$ where $D = 64 \times 64 = 4096$.
+
+The model computes **logits** (raw scores) via a linear transformation:
+
+$$\mathbf{z} = \mathbf{W}^\top \mathbf{x} + \mathbf{b}$$
+
+where $\mathbf{W} \in \mathbb{R}^{D \times C}$, $\mathbf{b} \in \mathbb{R}^{C}$, and $C = 16$ classes.
+
+### Softmax Function
+
+The logits are converted to probabilities using the **softmax function**:
+
+$$p(y=c \mid \mathbf{x}) = \frac{e^{z_c}}{\sum_{j=1}^{C} e^{z_j}}$$
+
+For numerical stability, we use the log-sum-exp trick:
+
+$$\log p_c = z_c - \log \sum_{j=1}^{C} e^{z_j}$$
+
+### Cross-Entropy Loss
+
+The model is trained to minimize **categorical cross-entropy**:
+
+$$\mathcal{L} = -\frac{1}{B} \sum_{n=1}^{B} \log p(y_n \mid \mathbf{x}_n)$$
+
+where $B$ is the batch size.
+
+### Gradient Computation (Backpropagation)
+
+The key insight is that the gradient of softmax + cross-entropy has a simple form. Let $\mathbf{P}$ be predicted probabilities and $\mathbf{Y}$ the one-hot encoded labels:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^\top (\mathbf{P} - \mathbf{Y}), \quad \frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_{n} (\mathbf{P}_n - \mathbf{Y}_n)$$
+
+### L2 Regularization (Weight Decay)
+
+To prevent overfitting, we apply L2 penalty:
+
+$$\mathbf{W} \leftarrow \mathbf{W} - \eta \left(\nabla_\mathbf{W} \mathcal{L} + \lambda \mathbf{W}\right)$$
+
+## Implementation (From Scratch)
+
+The entire model was implemented **without using `nn.Linear` or `nn.CrossEntropyLoss`**:
+
+```python
+def stable_softmax(logits: torch.Tensor) -> torch.Tensor:
+    """Numerically stable softmax: subtract max for stability."""
+    m = logits.max(dim=1, keepdim=True).values
+    exps = torch.exp(logits - m)
+    return exps / exps.sum(dim=1, keepdim=True)
+
+def one_hot(y: torch.Tensor, num_classes: int) -> torch.Tensor:
+    """Convert class indices to one-hot vectors."""
+    oh = torch.zeros((y.size(0), num_classes), device=y.device, dtype=torch.float32)
+    oh[torch.arange(y.size(0), device=y.device), y] = 1.0
+    return oh
+
+class SoftmaxRegressionScratch:
+    def __init__(self, input_dim: int, num_classes: int, seed: int, device: torch.device):
+        g = torch.Generator(device="cpu")
+        g.manual_seed(seed)
+        self.W = (torch.randn(input_dim, num_classes, generator=g) * 0.01).to(device)
+        self.b = torch.zeros(num_classes, device=device)
+
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
+        X = x.view(x.size(0), -1)  # flatten: (B, 1, H, W) -> (B, D)
+        return X @ self.W + self.b
+
+    def train_step(self, x: torch.Tensor, y: torch.Tensor, lr: float, weight_decay: float):
+        B = x.size(0)
+        X = x.view(B, -1)
+        
+        # Forward pass
+        logits = X @ self.W + self.b
+        probs = stable_softmax(logits)
+        loss = -torch.log(probs[torch.arange(B), y] + 1e-9).mean()
+        
+        # Backward pass (manual gradients)
+        dlogits = (probs - one_hot(y, NUM_CLASSES)) / B
+        dW = X.t() @ dlogits
+        db = dlogits.sum(dim=0)
+        
+        # L2 regularization
+        if weight_decay > 0:
+            dW = dW + weight_decay * self.W
+        
+        # SGD update
+        self.W = self.W - lr * dW
+        self.b = self.b - lr * db
+        
+        return float(loss.item())
+```
+
+## Hyperparameter Search
+
+We performed grid search over:
+
+- **Epochs**: {5, 10, 20, 35}
+- **Learning rate**: {0.01, 0.003, 0.001}
+- **Weight decay**: {0, 1e-4, 1e-3}
+
+**Total: 36 configurations**. Selection criterion: **best validation Macro-F1**.
+
+<img width="1083" alt="Softmax grid search results" src="https://github.com/user-attachments/assets/1909efff-13ed-437b-90c9-aec92b6c3b06" />
+
+### Validation Macro-F1 by Learning Rate
+
+<img width="591" alt="Validation F1 lr=0.01" src="https://github.com/user-attachments/assets/bbefd806-d191-442e-a991-a6d500f0d4d5" />
+<img width="602" alt="Validation F1 lr=0.003" src="https://github.com/user-attachments/assets/52ee7f34-8681-4ce7-914f-34aebdf4e1a0" />
+<img width="592" alt="Validation F1 lr=0.001" src="https://github.com/user-attachments/assets/4977315a-4a46-44b0-8506-57b84b4fbc85" />
+<img width="566" alt="Validation F1 summary" src="https://github.com/user-attachments/assets/b9efc0ff-367a-4ad2-88a3-490319aff335" />
+
+## Learning Dynamics (Best Configuration)
+
+Best configuration: **epochs=35, lr=0.01, weight_decay=1e-4**
+
+<img width="1131" alt="Softmax learning curves" src="https://github.com/user-attachments/assets/7883a14b-91e5-4c5c-8571-9bdff6d8bbc3" />
+
+The curves show fast convergence but limited capacity to improve further — expected for a linear model.
+
+## Final Performance
+
+| Metric | Validation | Test |
+|--------|------------|------|
+| Accuracy | ~0.11 | ~0.13 |
+| Macro-F1 | ~0.08 | ~0.10 |
+
+<img width="455" alt="Softmax confusion matrix" src="https://github.com/user-attachments/assets/2c985f07-3f8a-4ec9-ada5-6a9eca631dd8" />
+
+<img width="669" alt="Softmax test metrics" src="https://github.com/user-attachments/assets/d4a15c98-e365-4e57-9655-db9cc04d2dc7" />
+
+The confusion matrix shows the model struggles to separate classes, confirming that **linear decision boundaries are insufficient** for texture classification.
+
+## Computational Efficiency
+
+- **Parameters**: ~65k
+- **Model size**: ~0.25 MB
+- **Inference latency**: < 1 ms/image
+
+Despite low accuracy, Softmax Regression is extremely efficient — highlighting the trade-off between simplicity and representational power.
 
 ---
 
-## Summary
+# Model 2: Multi-Layer Perceptron (MLP)
 
-The data preparation pipeline produces:
+## Motivation
 
-- **Indexed dataset** with deterministic label encoding
-- **Stratified splits** preserving class balance (70/15/15)
-- **Normalized tensors** of shape $(1, 64, 64)$ with values in $[0, 1]$
-- **Fixed random seeds** for full reproducibility
-- **Unified evaluation interface** with metrics computed from scratch
+The MLP adds **non-linear capacity** through hidden layers with activation functions. Unlike the linear baseline, an MLP can learn **non-linear decision boundaries**. However, it still treats the image as a **flat vector** and does not model spatial locality.
 
-This architecture-agnostic representation serves as the foundation for training and comparing all models in subsequent sections.
+## Architecture
 
-## Softmax Regression (Linear Baseline)
+The MLP has the following structure:
 
-### Motivation and role in the project
+1. **Input**: Flatten image from (1, 64, 64) to vector of size 4096
+2. **Hidden layers**: Multiple (Linear → Sigmoid → Dropout) blocks
+3. **Output**: Linear layer producing 16 logits
+4. **Output activation**: Softmax (mutually exclusive classes)
 
-As a first step, we implemented **Softmax Regression** as a **linear baseline model**.  
-The purpose of this model is not to achieve high accuracy, but to establish a **reference point** for the task difficulty and to quantify how much performance gain is obtained when increasing model capacity (MLP and CNN).
-
-Softmax Regression is the **simplest discriminative model** suitable for multi-class classification. It assumes that the classes are **linearly separable** in the input space and does not exploit any spatial structure of the images. For this reason, it provides a meaningful lower bound on performance for image-based tasks.
-
----
-
-### Model definition
-
-Each input image is first flattened into a vector:
-
-$$
-\mathbf{x} \in \mathbb{R}^{D}, \quad D = H \cdot W
-$$
-
-The model computes class scores (logits) using a single linear transformation:
-
-$$
-\mathbf{z} = \mathbf{W}^\top \mathbf{x} + \mathbf{b}, \quad \mathbf{W} \in \mathbb{R}^{D \times C}, \ \mathbf{b} \in \mathbb{R}^{C}
-$$
-
-where $C = 16$ is the number of surface roughness classes.
-
-The logits are converted into class probabilities using the **softmax function**:
-
-$$
-p(y=c \mid \mathbf{x}) = \frac{e^{z_c}}{\sum_{j=1}^{C} e^{z_j}}
-$$
-
-This formulation ensures that the output is a valid categorical distribution over the classes.
-
----
-
-### Loss function
-
-We trained the model using the **categorical cross-entropy loss**, implemented from scratch in a numerically stable way:
-
-$$
-\mathcal{L} = -\frac{1}{B} \sum_{n=1}^{B} \log p(y_n \mid \mathbf{x}_n)
-$$
-
-To avoid numerical instability, the loss is computed directly from logits using the log-sum-exp trick:
-
-$$
-\log p_{n,c} = z_{n,c} - \log \sum_{j=1}^{C} e^{z_{n,j}}
-$$
-
----
-
-### Optimization and regularization
-
-All components of the training procedure were implemented **from scratch using PyTorch tensors**, without relying on high-level modules such as `nn.Linear` or `nn.CrossEntropyLoss`.
-
-Training was performed using **mini-batch gradient descent**, with the following gradient expressions:
-
-$$
-\frac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^\top (\mathbf{P} - \mathbf{Y}), \quad
-\frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_{n} (\mathbf{P}_n - \mathbf{Y}_n)
-$$
-
-where:
-- $\mathbf{P}$ is the matrix of predicted probabilities,
-- $\mathbf{Y}$ is the one-hot encoding of the ground-truth labels.
-
-We optionally applied **L2 weight decay**:
-
-$$
-\mathbf{W} \leftarrow \mathbf{W} - \eta (\nabla \mathbf{W} + \lambda \mathbf{W})
-$$
-
----
-
-### Hyperparameter search (cross-validation)
-
-To comply with the course requirements, we performed a **systematic grid search** over the main hyperparameters:
-
-- Number of epochs: $\{5, 10, 20, 35\}$
-- Learning rate: $\{10^{-2}, 3\cdot10^{-3}, 10^{-3}\}$
-- Weight decay: $\{0, 10^{-4}, 10^{-3}\}$
-
-For each configuration, the model was trained from scratch and evaluated on the **validation set**.  
-The selection criterion was the **best validation Macro-F1 score across epochs**, which is more informative than accuracy for multi-class problems.
-
-
-<img width="1083" height="394" alt="Screenshot 2026-02-02 at 2 43 51 PM" src="https://github.com/user-attachments/assets/1909efff-13ed-437b-90c9-aec92b6c3b06" />
-
-
-
-<img width="591" height="391" alt="Screenshot 2026-02-02 at 2 44 44 PM" src="https://github.com/user-attachments/assets/b9efc0ff-367a-4ad2-88a3-490319aff335" />
-<img width="602" height="394" alt="Screenshot 2026-02-02 at 2 44 59 PM" src="https://github.com/user-attachments/assets/52ee7f34-8681-4ce7-914f-34aebdf4e1a0" />
-<img width="592" height="387" alt="Screenshot 2026-02-02 at 2 45 15 PM" src="https://github.com/user-attachments/assets/4977315a-4a46-44b0-8506-57b84b4fbc85" />
-<img width="566" height="385" alt="Screenshot 2026-02-02 at 2 45 30 PM" src="https://github.com/user-attachments/assets/bbefd806-d191-442e-a991-a6d500f0d4d5" />
-
----
-
-### Learning dynamics
-
-For the best configuration, we monitored training and validation metrics across epochs:
-
-- Training loss
-- Validation loss
-- Validation accuracy
-- Validation Macro-F1
-- Validation Top-2 accuracy
-
-
-<img width="1131" height="277" alt="Screenshot 2026-02-02 at 2 46 18 PM" src="https://github.com/user-attachments/assets/7883a14b-91e5-4c5c-8571-9bdff6d8bbc3" />
-
-These curves show fast convergence and limited capacity to further improve performance, as expected from a linear model.
-
----
-
-### Final performance
-
-The best hyperparameter configuration was:
-- Epochs: 35  
-- Learning rate: 0.01  
-- Weight decay: $10^{-4}$
-
-Final metrics:
-
-- **Validation set**  
-  - Accuracy: ≈ 0.11  
-  - Macro-F1: ≈ 0.08  
-
-- **Test set**  
-  - Accuracy: ≈ 0.13  
-  - Macro-F1: ≈ 0.10
-
- 
-<img width="455" height="491" alt="Screenshot 2026-02-02 at 2 47 00 PM" src="https://github.com/user-attachments/assets/2c985f07-3f8a-4ec9-ada5-6a9eca631dd8" />
-
-<img width="669" height="231" alt="Screenshot 2026-02-02 at 2 48 25 PM" src="https://github.com/user-attachments/assets/d4a15c98-e365-4e57-9655-db9cc04d2dc7" />
-
-
-The confusion matrix shows that the model struggles to separate most classes, confirming that linear decision boundaries are insufficient for this texture-based classification task.
-
----
-
-### Computational efficiency
-
-Despite low predictive performance, Softmax Regression is extremely efficient:
-
-- Number of parameters: ~65k  
-- Model size: ~0.25 MB  
-- Inference latency: < 1 ms per image  
-
-
-This highlights the trade-off between model simplicity and representational power.
-
----
-
-### Summary
-
-Softmax Regression serves as a **transparent, fully controlled baseline**, implemented entirely from scratch.  
-Its poor performance relative to deeper models demonstrates that surface roughness classification from microscopy images requires **non-linear feature extraction** and **spatial inductive biases**, motivating the use of MLPs and convolutional neural networks in the subsequent sections.
-
-## MLP (From Scratch) — Nonlinear Baseline
-
-### Motivation and role in the project
-
-After the linear Softmax Regression baseline, we implemented a **Multi-Layer Perceptron (MLP)** to test whether adding **nonlinear capacity** improves performance on microscopy texture classification.  
-Unlike the linear model, an MLP can learn **nonlinear decision boundaries** and compose multiple transformations of the input. However, it still treats the image as a **flat vector** and therefore does **not explicitly model spatial locality** (unlike a CNN). This makes the MLP a meaningful intermediate baseline between Softmax Regression and CNN.
-
----
-
-### Architecture
-
-We used a fully-connected feed-forward network operating on flattened images:
-
-- Input: grayscale image $x \in \mathbb{R}^{1 \times H \times W}$, flattened to $\mathbf{x} \in \mathbb{R}^{D}$ where $D = H\cdot W$.
-- Hidden stack: multiple **Linear → Sigmoid** blocks, optionally followed by dropout during training.
-- Output: final Linear layer producing logits $\mathbf{z} \in \mathbb{R}^{C}$ for $C=16$ classes.
-- Output activation: **Softmax** (multi-class, mutually exclusive labels).
-
-Best-performing configuration in our grid search:
-- Hidden sizes: **(1024, 512)**  (two hidden layers)
+Best configuration from grid search:
+- Hidden sizes: **(1024, 512)** — two hidden layers
 - Dropout: **0.0**
-- Epochs: **60**
-- Learning rate: **0.001**
-- Weight decay: **0.0**
-- Input preprocessing: **$[0,1] \to [-1,1]$** via $x' = 2x - 1$
+- Input preprocessing: $x' = 2x - 1$ (maps [0,1] to [-1,1] for better gradient flow)
 
----
+## Mathematical Formulation
 
-### Forward pass mathematics
+### Linear Layer
 
-#### Linear layer
-For an input minibatch $\mathbf{X} \in \mathbb{R}^{B \times d_{in}}$:
+For input $\mathbf{X} \in \mathbb{R}^{B \times d_{in}}$:
 
-$$
-\mathbf{Z} = \mathbf{X}\mathbf{W} + \mathbf{b}
-$$
+$$\mathbf{Z} = \mathbf{X}\mathbf{W} + \mathbf{b}$$
 
 where $\mathbf{W} \in \mathbb{R}^{d_{in} \times d_{out}}$, $\mathbf{b} \in \mathbb{R}^{d_{out}}$.
 
-#### Sigmoid activation
+### Sigmoid Activation
 
-$$
-\sigma(z) = \frac{1}{1 + e^{-z}}
-$$
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
 
-#### Dropout (training only, inverted dropout)
-Given dropout probability $p$, keep probability $q=1-p$:
+The sigmoid squashes values to (0, 1), introducing non-linearity. We use sigmoid (as discussed with the professor) because:
+- It's a classic activation for educational purposes
+- It demonstrates the vanishing gradient problem that ReLU solves
 
-$$
-\mathbf{M} \sim \text{Bernoulli}(q), \quad \tilde{\mathbf{H}} = \frac{\mathbf{H}\odot \mathbf{M}}{q}
-$$
+### Dropout (Inverted)
 
-At inference, dropout is identity (no masking).
+During training, randomly zero out neurons with probability $p$:
 
-#### Softmax output
-For logits $\mathbf{z} \in \mathbb{R}^{C}$:
+$$\tilde{\mathbf{H}} = \frac{\mathbf{H} \odot \mathbf{M}}{1-p}, \quad \mathbf{M}_i \sim \text{Bernoulli}(1-p)$$
 
-$$
-p_c = \frac{e^{z_c}}{\sum_{j=1}^{C} e^{z_j}}
-$$
+The scaling by $1/(1-p)$ ensures expected values match at test time (when dropout is disabled).
 
-We implemented a numerically stable version:
+### Softmax Cross-Entropy Loss
 
-$$
-p_c = \frac{e^{z_c - m}}{\sum_{j=1}^{C} e^{z_j - m}}, \quad m=\max_j z_j
-$$
+Same as Softmax Regression:
+
+$$\mathcal{L} = -\frac{1}{B}\sum_{n=1}^{B}\log p_{n,y_n}$$
+
+## Backpropagation (From Scratch)
+
+All gradients were computed manually, without `torch.nn` layers or autograd.
+
+### Softmax + Cross-Entropy Gradient
+
+The gradient w.r.t. logits simplifies to:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{Z}} = \frac{\mathbf{P} - \mathbf{Y}}{B}$$
+
+where $\mathbf{P}$ = predicted probabilities, $\mathbf{Y}$ = one-hot labels.
+
+### Linear Layer Gradients
+
+Given upstream gradient $\mathbf{G} = \frac{\partial \mathcal{L}}{\partial \mathbf{Z}}$:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^\top \mathbf{G}, \quad \frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_{n} \mathbf{G}_n, \quad \frac{\partial \mathcal{L}}{\partial \mathbf{X}} = \mathbf{G}\mathbf{W}^\top$$
+
+### Sigmoid Gradient
+
+If $\mathbf{S} = \sigma(\mathbf{Z})$:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{Z}} = \frac{\partial \mathcal{L}}{\partial \mathbf{S}} \odot \mathbf{S}(1 - \mathbf{S})$$
+
+This is the famous $\sigma'(z) = \sigma(z)(1-\sigma(z))$ property.
+
+## Implementation (From Scratch)
+
+The MLP uses PyTorch only as a **tensor library** (`matmul`, `exp`, etc.) and for data loading. All neural network components are manual:
+
+```python
+class LinearScratch:
+    """Fully-connected layer with manual forward/backward."""
+    
+    def __init__(self, in_dim: int, out_dim: int, seed: int, device: torch.device):
+        # Xavier initialization for better gradient flow
+        limit = math.sqrt(6.0 / (in_dim + out_dim))
+        g = torch.Generator(device="cpu")
+        g.manual_seed(seed)
+        self.W = torch.empty(in_dim, out_dim).uniform_(-limit, limit, generator=g).to(device)
+        self.b = torch.zeros(out_dim, device=device)
+        self.x = None  # cache for backward
+        self.dW = torch.zeros_like(self.W)
+        self.db = torch.zeros_like(self.b)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.x = x  # save for backward pass
+        return x @ self.W + self.b
+
+    def backward(self, dout: torch.Tensor) -> torch.Tensor:
+        self.dW = self.x.t() @ dout      # gradient w.r.t. weights
+        self.db = dout.sum(dim=0)         # gradient w.r.t. bias
+        dx = dout @ self.W.t()            # gradient to propagate back
+        return dx
+
+    def sgd_step(self, lr: float, weight_decay: float):
+        if weight_decay > 0:
+            self.dW = self.dW + weight_decay * self.W
+        self.W = self.W - lr * self.dW
+        self.b = self.b - lr * self.db
+
+
+class SigmoidScratch:
+    """Sigmoid activation with manual backward."""
+    
+    def __init__(self):
+        self.s = None  # cache sigmoid output
+    
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        s = 1.0 / (1.0 + torch.exp(-z))
+        self.s = s
+        return s
+    
+    def backward(self, dout: torch.Tensor) -> torch.Tensor:
+        # σ'(z) = σ(z) * (1 - σ(z))
+        return dout * self.s * (1.0 - self.s)
+
+
+class DropoutScratch:
+    """Inverted dropout (from scratch)."""
+    
+    def __init__(self, p: float):
+        self.p = p
+        self.mask = None
+        self.training = True
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if (not self.training) or self.p == 0.0:
+            self.mask = None
+            return x
+        keep_prob = 1.0 - self.p
+        self.mask = (torch.rand_like(x) < keep_prob).to(x.dtype)
+        return x * self.mask / keep_prob  # scale to maintain expected value
+    
+    def backward(self, dout: torch.Tensor) -> torch.Tensor:
+        if self.mask is None:
+            return dout
+        keep_prob = 1.0 - self.p
+        return dout * self.mask / keep_prob
+
+
+class MLPScratch:
+    """Multi-layer perceptron: Flatten -> [Linear -> Sigmoid -> Dropout]×K -> Linear"""
+    
+    def __init__(self, input_dim, hidden_sizes, num_classes, dropout_p, seed, device):
+        self.layers = []
+        cur = input_dim
+        s = seed
+        
+        for h in hidden_sizes:
+            self.layers.append(LinearScratch(cur, h, s, device))
+            self.layers.append(SigmoidScratch())
+            if dropout_p > 0:
+                self.layers.append(DropoutScratch(dropout_p))
+            cur = h
+            s += 1
+        
+        # Output layer (no activation - logits)
+        self.layers.append(LinearScratch(cur, num_classes, s, device))
+    
+    def forward_logits(self, x_img: torch.Tensor) -> torch.Tensor:
+        # Center input: [0,1] -> [-1,1] for better sigmoid behavior
+        x = (x_img * 2.0 - 1.0).view(x_img.size(0), -1)
+        for layer in self.layers:
+            x = layer.forward(x)
+        return x
+    
+    def backward(self, dlogits: torch.Tensor):
+        d = dlogits
+        for layer in reversed(self.layers):
+            d = layer.backward(d)
+    
+    def sgd_step(self, lr: float, weight_decay: float):
+        for layer in self.layers:
+            if isinstance(layer, LinearScratch):
+                layer.sgd_step(lr, weight_decay)
+```
+
+## Hyperparameter Search
+
+We performed extensive grid search over **96 configurations**:
+
+- **Hidden layouts**: (512, 256), (512, 512, 256), (1024, 512), (1024, 512, 256)
+- **Dropout**: 0.0, 0.3, 0.5
+- **Learning rate**: 0.001, 0.0003
+- **Weight decay**: 0.0, 1e-4
+- **Epochs**: 40, 60
+
+Selection criterion: **best validation Macro-F1** during training.
+
+<img width="699" alt="MLP grid search" src="https://github.com/user-attachments/assets/b263aec2-cab6-4e82-b76c-8490850d5e7d" />
+
+## Final Results (Best Configuration)
+
+Best configuration: **hidden=(1024, 512), dropout=0.0, lr=0.001, epochs=60**
+
+| Metric | Validation | Test |
+|--------|------------|------|
+| Loss | 2.68 | 2.68 |
+| Accuracy | 0.160 | 0.130 |
+| Macro-F1 | 0.127 | 0.104 |
+| Top-2 Accuracy | 0.280 | 0.267 |
+
+### Learning Curves
+
+<img width="1068" alt="MLP learning curves" src="https://github.com/user-attachments/assets/f1da18aa-282e-4ea3-84e6-73300642c96c" />
+
+### Confusion Matrices
+
+<img width="489" alt="MLP validation confusion matrix" src="https://github.com/user-attachments/assets/393d7a24-1676-4923-bd81-535215af530b" />
+
+<img width="517" alt="MLP test confusion matrix" src="https://github.com/user-attachments/assets/49c7ec88-32f7-4f57-917e-ae3e24b659bb" />
+
+## Analysis: Why MLP Struggles
+
+The MLP improves over Softmax Regression due to non-linear capacity, but gains are **limited**:
+
+1. **Flattening destroys spatial structure** — the model cannot exploit that nearby pixels are related
+2. **No translation invariance** — a texture pattern in one location is treated differently than the same pattern elsewhere
+3. **Sigmoid saturation** — gradients vanish when activations are near 0 or 1, making deep networks hard to train
+
+This motivates CNNs, which are designed for image data.
+
+## Computational Efficiency
+
+- **Inference latency**: 1.16 ms/image
+- **Throughput**: 859 images/sec
 
 ---
 
-### Loss function (multi-class cross-entropy)
+# Model 3: Convolutional Neural Network (CNN)
 
-Classes are **mutually exclusive**. Therefore we use softmax + cross-entropy:
+## Motivation
 
-$$
-\mathcal{L} = -\frac{1}{B}\sum_{n=1}^{B}\log p_{n,y_n}
-$$
+The first two models operate on **flattened pixels** and cannot capture **local texture patterns** (edges, micro-structures, spatial frequency). A CNN is designed to exploit:
 
----
+- **Spatial locality** — nearby pixels are related
+- **Translation invariance** — patterns should be detected regardless of position
+- **Hierarchical features** — edges → textures → complex patterns
 
-### Backpropagation (implemented from scratch)
+## Architecture
 
-All gradients were computed manually, without `torch.nn` layers and without autograd.
+We implemented a standard CNN following the course structure:
 
-#### Softmax + cross-entropy gradient (key simplification)
-Let $\mathbf{P} \in \mathbb{R}^{B\times C}$ be predicted probabilities and $\mathbf{Y}$ the one-hot labels. Then:
+**Feature Extractor (3 convolutional blocks):**
 
-$$
-\frac{\partial \mathcal{L}}{\partial \mathbf{Z}} = \frac{\mathbf{P} - \mathbf{Y}}{B}
-$$
+```
+Conv2d(1 → 32, 3×3, padding=1) → ReLU → MaxPool2d(2)
+Conv2d(32 → 64, 3×3, padding=1) → ReLU → MaxPool2d(2)
+Conv2d(64 → 128, 3×3, padding=1) → ReLU → MaxPool2d(2)
+```
 
-This gives the gradient w.r.t. logits of the last layer.
+**Classifier Head:**
 
-#### Linear layer gradients
-Given $\mathbf{Z} = \mathbf{XW} + \mathbf{b}$ and upstream gradient $\mathbf{G} = \frac{\partial \mathcal{L}}{\partial \mathbf{Z}}$:
+```
+Flatten → Linear(128·8·8 → 256) → ReLU → Dropout(0.5) → Linear(256 → 16)
+```
 
-$$
-\frac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^\top \mathbf{G}, \quad
-\frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_{n=1}^{B} \mathbf{G}_n, \quad
-\frac{\partial \mathcal{L}}{\partial \mathbf{X}} = \mathbf{G}\mathbf{W}^\top
-$$
+**Spatial dimension evolution:**
 
-#### Sigmoid backward
-If $\mathbf{S}=\sigma(\mathbf{Z})$, then:
+$$64 \times 64 \xrightarrow{\text{pool}} 32 \times 32 \xrightarrow{\text{pool}} 16 \times 16 \xrightarrow{\text{pool}} 8 \times 8$$
 
-$$
-\frac{\partial \mathcal{L}}{\partial \mathbf{Z}} =
-\frac{\partial \mathcal{L}}{\partial \mathbf{S}} \odot \mathbf{S}(1-\mathbf{S})
-$$
+Flattened feature size: $128 \times 8 \times 8 = 8192$
 
-#### Weight decay (L2 regularization)
-We applied L2 penalty via the gradient update:
+## Mathematical Formulation
 
-$$
-\mathbf{W} \leftarrow \mathbf{W} - \eta \left(\frac{\partial \mathcal{L}}{\partial \mathbf{W}} + \lambda \mathbf{W}\right)
-$$
+### Convolution Operation
 
-#### Parameter update (SGD)
-For each layer:
+A convolution applies learnable filters to detect local patterns. For input $x$ and kernel $w$:
 
-$$
-\mathbf{W} \leftarrow \mathbf{W} - \eta \nabla_{\mathbf{W}}, \quad
-\mathbf{b} \leftarrow \mathbf{b} - \eta \nabla_{\mathbf{b}}
-$$
-
----
-
-### Implementation details (what was done "from scratch")
-
-The MLP training pipeline uses PyTorch only as:
-- a tensor library (`matmul`, `exp`, etc.)
-- mini-batching via `DataLoader`
-- device acceleration (CPU/GPU)
-
-All core neural network parts were implemented manually:
-- Linear forward/backward
-- Sigmoid forward/backward
-- Dropout forward (train-time) and identity at inference
-- Softmax + Cross-Entropy forward and backward
-- SGD updates with optional L2 weight decay
-- Metrics computed from scratch (confusion matrix, accuracy, macro-F1, balanced accuracy, top-2)
-
-
-<img width="1069" height="233" alt="Screenshot 2026-02-02 at 3 29 56 PM" src="https://github.com/user-attachments/assets/fe1e578d-25e8-4510-9647-7f0eaf320cd5" />
-
----
-
-### Hyperparameter search (validation-based tuning)
-
-To satisfy the course requirement ("evaluate different values for hyperparameters to find the optimal ones"), we ran a grid search over:
-
-- Hidden layer layouts:
-  - (512, 256)
-  - (512, 512, 256)
-  - (1024, 512)
-  - (1024, 512, 256)
-
-- Dropout:
-  - 0.0, 0.3, 0.5
-
-- Learning rate:
-  - 0.001, 0.0003
-
-- Weight decay:
-  - 0.0, 1e-4
-
-- Epochs:
-  - 40, 60
-
-Total runs: **96 configurations**.
-
-Selection criterion: **best validation Macro-F1** during training (not only last epoch).
-
-
-<img width="699" height="387" alt="Screenshot 2026-02-02 at 3 31 31 PM" src="https://github.com/user-attachments/assets/b263aec2-cab6-4e82-b76c-8490850d5e7d" />
-
----
-
-### Final results (best configuration)
-
-Best configuration:
-- Hidden sizes: **(1024, 512)**
-- Dropout: **0.0**
-- Epochs: **60**
-- Learning rate: **0.001**
-- Weight decay: **0.0**
-- Input preprocessing: $x' = 2x-1$
-
-Metrics:
-
-**Validation**
-- Loss: **2.6807**
-- Accuracy: **0.1597**
-- Macro-F1: **0.1267**
-- Balanced accuracy: **0.1597**
-- Top-2 accuracy: **0.2795**
-
-**Test**
-- Loss: **2.6829**
-- Accuracy: **0.1302**
-- Macro-F1: **0.1042**
-- Balanced accuracy: **0.1302**
-- Top-2 accuracy: **0.2674**
-
-
-<img width="489" height="489" alt="Screenshot 2026-02-02 at 3 33 14 PM" src="https://github.com/user-attachments/assets/393d7a24-1676-4923-bd81-535215af530b" />
-
-<img width="517" height="485" alt="Screenshot 2026-02-02 at 3 33 35 PM" src="https://github.com/user-attachments/assets/49c7ec88-32f7-4f57-917e-ae3e24b659bb" />
-
-<img width="1068" height="343" alt="Screenshot 2026-02-02 at 3 33 50 PM" src="https://github.com/user-attachments/assets/f1da18aa-282e-4ea3-84e6-73300642c96c" />
-
----
-
-### Discussion: what works and what does not
-
-- Compared to Softmax Regression, the MLP increases representational power via nonlinear layers, but improvements are **limited**.  
-- The main limitation is that the MLP flattens the image into a vector and cannot exploit **local texture patterns** and **translation invariance**.
-- The low macro-F1 indicates that the model is not learning sufficiently discriminative features for many classes, even after increasing depth/width and testing dropout and regularization.
-- This motivates CNNs, which are designed to learn local texture features through convolution and pooling.
-
----
-
-### Performance considerations
-
-We also benchmarked inference speed and model size for the selected deep MLP.
-
-**Figure to insert:** *Deep MLP — quality vs performance (Macro-F1 vs latency)*
-
-This allows a direct comparison of "cost vs quality" with the baseline linear model and the CNN.
-
----
-
-### Summary
-
-The MLP section demonstrates a fully manual implementation of a multi-layer neural network (forward + backward + SGD), and a proper validation-based hyperparameter search.  
-Despite increasing depth, the MLP still underperforms strongly compared to CNNs, supporting the conclusion that spatial inductive biases (convolution/pooling) are essential for microscopy texture-based classification.
-
-Deep MLP summary:
-- Config: {'hidden_sizes': (1024, 512), 'dropout': 0.0, 'epochs': 60, 'lr': 0.001, 'weight_decay': 0.0, 'seed': 42, 'image_size': 64, 'input_preprocess': 'x in [0,1] -> [-1,1] via (2x-1)'}
-- Val: acc=0.1788, macroF1=0.1471, top2=0.3229
-- Test: acc=0.1562, macroF1=0.1166, top2=0.2882
-- Inference: latency=1.164 ms/img, throughput=859.1 img/s
-
-
-## Model 3 — Convolutional Neural Network (CNN, PyTorch layers allowed)
-
-### Goal and motivation
-The first two models (softmax regression and MLP trained "from scratch") operate on **flattened pixels** and therefore struggle to capture **local texture patterns** (edges, repeated micro-structures, spatial frequency) that are crucial for microscopy-based surface roughness recognition. A CNN is specifically designed to exploit **spatial locality** and **translation invariance** through convolutional filters and pooling, so it is expected to outperform both linear and fully-connected baselines on texture classification.
-
----
-
-## CNN architecture (lecture-style CNN)
-We implemented a standard CNN similar to the one discussed in the course:
-
-**Feature extractor (3 convolutional blocks):**
-1. `Conv2d(1 → 32, 3×3, padding=1)` → `ReLU` → `MaxPool2d(2)`
-2. `Conv2d(32 → 64, 3×3, padding=1)` → `ReLU` → `MaxPool2d(2)`
-3. `Conv2d(64 → 128, 3×3, padding=1)` → `ReLU` → `MaxPool2d(2)`
-
-**Classification head:**
-- `Flatten`
-- `Linear(128·8·8 → 256)` → `ReLU`
-- `Dropout(p=0.5)`
-- `Linear(256 → 16)`
-
-Because the input resolution is fixed at `64×64`, three pooling operations halve the spatial size each time:
-
-$$64 \times 64 \xrightarrow{\text{pool}/2} 32 \times 32 \xrightarrow{\text{pool}/2} 16 \times 16 \xrightarrow{\text{pool}/2} 8 \times 8$$
-
-Therefore the flattened feature vector has size:
-
-$$128 \cdot 8 \cdot 8 = 8192$$
-
----
-
-## Mathematical formulation
-
-### Convolution layer
-A convolution layer applies a set of learnable kernels (filters). For an input tensor $x$ and a kernel $w$, each output feature map is computed as:
-
-$$z_{k}(i,j) = \sum_{c}\sum_{u,v} w_{k,c}(u,v)\,x_{c}(i+u, j+v) + b_k$$
+$$z_k(i,j) = \sum_{c}\sum_{u,v} w_{k,c}(u,v) \cdot x_c(i+u, j+v) + b_k$$
 
 where:
-- $k$ is the output channel index,
-- $c$ is the input channel index,
-- $u,v$ iterate over the kernel spatial positions (here $3\times3$),
-- $b_k$ is the bias term.
+- $k$ = output channel (filter index)
+- $c$ = input channel
+- $(u, v)$ = kernel position (3×3 in our case)
+- $b_k$ = bias term
 
-### ReLU activation
+### ReLU Activation
 
-$$\text{ReLU}(z)=\max(0,z)$$
+$$\text{ReLU}(z) = \max(0, z)$$
 
-ReLU avoids saturation issues typical of sigmoid and improves gradient flow.
+ReLU avoids the vanishing gradient problem of sigmoid and allows deeper networks.
 
-### Max pooling
-Max pooling selects the maximum value in each spatial window (here $2\times2$):
+### Max Pooling
 
-$$y(i,j)=\max_{(u,v)\in \text{window}} x(2i+u,2j+v)$$
+Selects the maximum value in each 2×2 window:
 
-Pooling reduces resolution and provides local invariance, which is useful for texture variations and small shifts.
+$$y(i,j) = \max_{(u,v) \in \text{window}} x(2i+u, 2j+v)$$
 
-### Final classifier + softmax cross-entropy
-The CNN produces **logits** $\mathbf{z} \in \mathbb{R}^{16}$. We train with multi-class softmax cross-entropy:
+Benefits:
+- Reduces spatial dimensions (computational efficiency)
+- Provides local translation invariance
+- Extracts dominant features
 
-$$p_c = \frac{e^{z_c}}{\sum_{j=1}^{16} e^{z_j}},\qquad \mathcal{L} = -\log p_{y}$$
+### Softmax Cross-Entropy
 
-where $y$ is the true class label.
+Same loss function as previous models:
 
----
+$$\mathcal{L} = -\log \frac{e^{z_y}}{\sum_{j=1}^{16} e^{z_j}}$$
 
-## Training setup and hyperparameter choices
+## Implementation (PyTorch)
 
-### Allowed PyTorch components (as requested)
-For the CNN, we used standard PyTorch modules and autograd (this was explicitly allowed):
-- `nn.Conv2d`, `nn.ReLU`, `nn.MaxPool2d`, `nn.Linear`, `nn.Dropout`
-- `nn.CrossEntropyLoss`
-- `torch.optim.Adam`
-- `loss.backward()` for gradients
+For the CNN, we used standard PyTorch modules (as allowed by the professor):
 
-### Optimization
-We used Adam because it typically converges faster and more stably than vanilla SGD in CNN training:
+```python
+class CNNModel(nn.Module):
+    def __init__(self, channels=(32, 64, 128), dropout=0.5):
+        super().__init__()
+        c1, c2, c3 = channels
+        
+        self.features = nn.Sequential(
+            nn.Conv2d(1, c1, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            nn.Conv2d(c1, c2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            nn.Conv2d(c2, c3, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+        )
+        
+        # After 3 pools: 64→32→16→8
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(c3 * 8 * 8, 256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, NUM_CLASSES)
+        )
+    
+    def forward(self, x):
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
+```
 
-$$\theta_{t+1} = \theta_t - \alpha \cdot \frac{\hat{m}_t}{\sqrt{\hat{v}_t}+\epsilon}$$
+## Training Setup
 
-with bias-corrected first/second moment estimates $\hat{m}_t,\hat{v}_t$.
+**Optimizer**: Adam with adaptive learning rates
 
-### Regularization: dropout and weight decay
-- **Dropout** in the fully-connected head with $p=0.5$ reduces overfitting by randomly zeroing activations during training:
+$$\theta_{t+1} = \theta_t - \alpha \cdot \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}$$
 
-$$h' = m \odot h,\quad m_i \sim \text{Bernoulli}(1-p)$$
+Adam typically converges faster than vanilla SGD for CNNs.
 
-- **Weight decay** (L2 regularization) in Adam:
+**Regularization**:
+- Dropout (p=0.5) in fully-connected layer
+- Weight decay (L2) in optimizer
 
-$$\mathcal{L}' = \mathcal{L} + \lambda \|\theta\|_2^2$$
+**Early stopping**: patience=8 epochs based on validation Macro-F1
 
-helps prevent large weights and improves generalization.
+## Best Configuration
 
-### Early stopping (selection criterion)
-To follow the course requirement of selecting hyperparameters based on validation performance, we used:
-- **early stopping** with **patience = 8**
-- validation metric: **Macro-F1**
+- Channels: (32, 64, 128)
+- Dropout: 0.5
+- Learning rate: 1e-3
+- Weight decay: 1e-4
+- Max epochs: 60
+- Early stopping patience: 8
 
-Macro-F1 is appropriate because it gives equal importance to all classes:
+Training stopped at epoch 39 (best epoch: 31).
 
-$$\text{MacroF1}=\frac{1}{C}\sum_{c=1}^{C}F1_c$$
+## Final Performance
 
----
+| Metric | Validation | Test |
+|--------|------------|------|
+| Loss | 1.33 | 1.34 |
+| Accuracy | **0.597** | **0.592** |
+| Macro-F1 | **0.594** | **0.590** |
+| Top-2 Accuracy | 0.837 | 0.825 |
 
-## Best CNN run (selected model)
+### Learning Curves
 
-**Configuration**
-- Channels: `(32, 64, 128)`
-- Dropout: `0.5`
-- Optimizer: `Adam`
-- Learning rate: `1e-3`
-- Weight decay: `1e-4`
-- Max epochs: `60`
-- Early stopping patience: `8`
+<img width="1065" alt="CNN learning curves" src="https://github.com/user-attachments/assets/c79e2fef-5e06-4286-bd5b-d41cd791d275" />
 
-**Early stopping result**
-- Best training epoch (highest val Macro-F1 during training): **epoch 31**
-- Training stopped at epoch 39 due to no improvement for 8 epochs.
+### Confusion Matrices
 
----
+<img width="463" alt="CNN validation confusion matrix" src="https://github.com/user-attachments/assets/73e73d67-3169-46b8-b3af-b17cfe523482" />
 
-## Final performance (from your run)
+<img width="479" alt="CNN test confusion matrix" src="https://github.com/user-attachments/assets/527aeada-bb08-4ac6-9112-9ee48f4f2e78" />
 
-### Validation set
-- **Accuracy:** 0.5972  
-- **Macro-F1:** 0.5944  
-- **Balanced Accuracy:** 0.5972  
-- **Top-2 Accuracy:** 0.8368  
-- **Loss:** 1.3328  
+### Per-Class F1 Scores
 
-### Test set
-- **Accuracy:** 0.5920  
-- **Macro-F1:** 0.5898  
-- **Balanced Accuracy:** 0.5920  
-- **Top-2 Accuracy:** 0.8247  
-- **Loss:** 1.3352  
+<img width="1063" alt="CNN per-class F1" src="https://github.com/user-attachments/assets/603f0d10-7faa-482c-99f7-790a0bcbe049" />
 
-**Interpretation:** CNN dramatically improves over both pixel-based models because it learns discriminative local texture filters. The remaining generalization gap (train loss decreasing while val loss increases after the best epoch) is mitigated using dropout + weight decay + early stopping, but can be further improved with augmentation (see "possible improvements").
+## Computational Efficiency
 
----
+| Metric | Value |
+|--------|-------|
+| Parameters | 2,194,192 |
+| Model size | 8.37 MB |
+| Training time | 846 sec (39 epochs) |
+| Inference latency | 4.05 ms/image |
+| Throughput | 247 images/sec |
 
-## Efficiency / performance metrics
-
-### Model size
-- **Parameters:** 2,194,192  
-- **Approx. size:** 8.37 MB (float32)
-
-### Training time
-- **Avg sec/epoch:** 21.70 s  
-- **Total training time:** 846.24 s (39 epochs executed)
-
-### Inference benchmark (test loader)
-- **Latency:** 4.05 ms / image  
-- **Throughput:** 246.78 images/sec  
-
-**Trade-off:** CNN is slower than shallow baselines, but the gain in Macro-F1 is very large, making it the best quality/cost trade-off for this task.
-
----
-
-## What to include as figures in the report (placeholders)
-
-1. **CNN Learning Curves (train loss, val loss, val accuracy, val macro-F1, val top-2)**  
-<img width="1065" height="229" alt="Screenshot 2026-02-02 at 3 38 07 PM" src="https://github.com/user-attachments/assets/c79e2fef-5e06-4286-bd5b-d41cd791d275" />
-
-2. **CNN Confusion Matrix (Validation)**  
-<img width="463" height="486" alt="Screenshot 2026-02-02 at 3 38 29 PM" src="https://github.com/user-attachments/assets/73e73d67-3169-46b8-b3af-b17cfe523482" />
-
-3. **CNN Confusion Matrix (Test)**  
-<img width="479" height="482" alt="Screenshot 2026-02-02 at 3 38 48 PM" src="https://github.com/user-attachments/assets/527aeada-bb08-4ac6-9112-9ee48f4f2e78" />
-
-4. **CNN Per-class F1 (Test)**  
-<img width="1063" height="361" alt="Screenshot 2026-02-02 at 3 39 12 PM" src="https://github.com/user-attachments/assets/603f0d10-7faa-482c-99f7-790a0bcbe049" />
+CNN is slower than shallow baselines, but the **massive gain in Macro-F1** (0.59 vs 0.10) makes it the best quality/cost trade-off.
 
 ---
 
-## Notes for professor-oriented discussion (why CNN works)
-- Softmax regression assumes a **linear decision boundary in pixel space** and cannot represent texture patterns.
-- MLP can represent non-linear boundaries, but flattening destroys spatial structure and the model lacks inductive bias for locality.
-- CNN encodes the right inductive biases:
-  - local receptive fields → learns micro-structures,
-  - shared weights → detects patterns anywhere in the image,
-  - pooling → robustness to small spatial shifts,
-  - deeper hierarchy → edges → motifs → texture signatures.
+# Conclusion
 
+## Model Comparison
 
+We systematically compared three architectures with increasing complexity on the same classification task.
 
-## Conclusion
+### Performance Comparison
 
-In this project, we systematically compared three neural architectures of increasing complexity—**Softmax Regression**, **Deep MLP**, and **Convolutional Neural Network (CNN)**—on the same image classification task, using a unified data pipeline, consistent evaluation metrics, and validation-driven model selection.
+<img width="1074" alt="All models comparison" src="https://github.com/user-attachments/assets/c63971c8-b1db-4bcf-8747-d0346ec5e9e0" />
 
-We began with **Softmax Regression**, implemented fully *from scratch*, including the forward pass, softmax normalization, cross-entropy loss, and manual gradient updates. As shown in **“Test Macro-F1 / Accuracy / Top-2 barplots”** and **“Softmax Regression — Test Confusion Matrix”**, this linear model achieved the lowest performance. This outcome is expected, since softmax regression operates on flattened pixels and can only learn linear decision boundaries, making it fundamentally limited for texture-rich image data.
+### Per-Class F1 Across Models
 
-Next, we evaluated a **Deep MLP (Sigmoid)**, also implemented *from scratch*, including manual forward and backward propagation. Multiple architectures, learning rates, depths, and regularization settings were explored via grid search, and the best configuration was selected using validation Macro-F1. The improvement over softmax regression is clearly visible in **“Test Macro-F1 / Accuracy / Top-2 barplots”** and **“Deep MLP — Test Confusion Matrix”**. However, **“Per-class F1 (TEST) — all models”** highlights that class-wise performance remains unstable. This confirms that, although non-linear, the MLP still lacks spatial inductive bias because the image is flattened before processing.
+<img width="1066" alt="Per-class F1 all models" src="https://github.com/user-attachments/assets/f7c126e7-40db-4c22-af5c-6c9b6146312b" />
 
-Finally, the **CNN** achieved the best overall performance. Using convolutional layers with pooling, dropout, and early stopping, the model was able to exploit local spatial patterns and hierarchical features. This advantage is evident in **“Test Macro-F1 / Accuracy / Top-2 barplots”**, where CNN clearly outperforms the other models, and in **“CNN — Test Confusion Matrix”**, which shows more concentrated mass along the diagonal. The training dynamics are illustrated in **“Validation Macro-F1 — learning curves”** and **“Validation Loss — learning curves”**, demonstrating stable convergence and effective regularization. Although CNN introduces a significantly larger parameter count and inference cost, this trade-off is visualized in **“Params / Size / Latency barplots”** and **“Quality vs Performance”**, where CNN delivers the best accuracy at the expense of higher latency.
+### Quality vs Performance Trade-off
 
-Overall, the results confirm the theoretical expectations:  
-- Linear models are insufficient for complex visual tasks.  
-- Fully connected networks benefit from non-linearity but struggle without spatial structure.  
-- Convolutional architectures provide the best balance between representation power and generalization for image data.
+<img width="626" alt="Quality vs performance" src="https://github.com/user-attachments/assets/7b2da291-e7f1-4017-a291-be3b62e9913a" />
 
-Thus, the CNN represents the most appropriate model for this task, while the softmax regression and MLP serve as valuable baselines that demonstrate the importance of architectural inductive biases in deep learning.
+## Key Findings
 
-image loss accuracy validation accuracy and val macro f1
-<img width="1074" height="298" alt="Screenshot 2026-02-02 at 3 48 48 PM" src="https://github.com/user-attachments/assets/c63971c8-b1db-4bcf-8747-d0346ec5e9e0" />
+| Model | Test Accuracy | Test Macro-F1 | Parameters | Latency |
+|-------|---------------|---------------|------------|---------|
+| Softmax Regression | 0.13 | 0.10 | ~65K | <1 ms |
+| MLP (1024, 512) | 0.16 | 0.12 | ~5M | 1.2 ms |
+| CNN (32-64-128) | **0.59** | **0.59** | ~2.2M | 4 ms |
 
-img per class f1 score across all models
-<img width="1066" height="375" alt="Screenshot 2026-02-02 at 3 49 38 PM" src="https://github.com/user-attachments/assets/f7c126e7-40db-4c21-af5c-6c9b6146312b" />
+## Analysis
 
-quality vs performance across all models
-<img width="626" height="495" alt="Screenshot 2026-02-02 at 3 50 08 PM" src="https://github.com/user-attachments/assets/7b2da291-e7f1-4017-a291-be3b62e9913a" />
+### Softmax Regression
+
+Implemented **fully from scratch** including forward pass, softmax normalization, cross-entropy loss, and manual gradient updates. The lowest performance is expected: softmax regression operates on flattened pixels and can only learn **linear decision boundaries**, making it fundamentally limited for texture-rich image data.
+
+### Multi-Layer Perceptron
+
+Also implemented **fully from scratch** with manual backpropagation. Despite non-linear capacity, improvements are limited because:
+- The image is **flattened** before processing, destroying spatial structure
+- No **translation invariance** — patterns are position-dependent
+- Sigmoid activation suffers from **vanishing gradients**
+
+### Convolutional Neural Network
+
+Achieved the best performance by exploiting:
+- **Local receptive fields** — learns texture micro-structures
+- **Shared weights** — detects patterns anywhere in the image
+- **Pooling** — robustness to small spatial shifts
+- **Hierarchical features** — edges → motifs → texture signatures
+
+## Theoretical Takeaways
+
+1. **Linear models are insufficient** for complex visual tasks requiring texture discrimination
+2. **Fully connected networks** benefit from non-linearity but struggle without spatial inductive bias
+3. **Convolutional architectures** provide the best balance between representation power and generalization for image data
+
+The CNN represents the **most appropriate model** for surface roughness classification, while Softmax Regression and MLP serve as valuable baselines demonstrating the importance of architectural inductive biases in deep learning.
