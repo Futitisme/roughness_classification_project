@@ -762,3 +762,12 @@ Overall, the results confirm the theoretical expectations:
 - Convolutional architectures provide the best balance between representation power and generalization for image data.
 
 Thus, the CNN represents the most appropriate model for this task, while the softmax regression and MLP serve as valuable baselines that demonstrate the importance of architectural inductive biases in deep learning.
+
+image loss accuracy validation accuracy and val macro f1
+<img width="1074" height="298" alt="Screenshot 2026-02-02 at 3 48 48 PM" src="https://github.com/user-attachments/assets/c63971c8-b1db-4bcf-8747-d0346ec5e9e0" />
+
+img per class f1 score across all models
+<img width="1066" height="375" alt="Screenshot 2026-02-02 at 3 49 38 PM" src="https://github.com/user-attachments/assets/f7c126e7-40db-4c21-af5c-6c9b6146312b" />
+
+quality vs performance across all models
+<img width="626" height="495" alt="Screenshot 2026-02-02 at 3 50 08 PM" src="https://github.com/user-attachments/assets/7b2da291-e7f1-4017-a291-be3b62e9913a" />
