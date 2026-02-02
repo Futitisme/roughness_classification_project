@@ -343,10 +343,6 @@ Best-performing configuration in our grid search:
 - Weight decay: **0.0**
 - Input preprocessing: **$[0,1] \to [-1,1]$** via $x' = 2x - 1$
 
-**Figure to insert:** *Deep MLP — architecture diagram (Flatten → Linear(4096→1024) → Sigmoid → Linear(1024→512) → Sigmoid → Linear(512→16))*
-
-> Note on naming: even with two hidden layers, it is a **Multi-Layer** Perceptron because it contains **multiple trainable linear transformations** (more than one linear layer).
-
 ---
 
 ### Forward pass mathematics
@@ -462,7 +458,8 @@ All core neural network parts were implemented manually:
 - SGD updates with optional L2 weight decay
 - Metrics computed from scratch (confusion matrix, accuracy, macro-F1, balanced accuracy, top-2)
 
-**Figure to insert:** *Deep MLP — learning curves (train loss, val loss, val acc, val macro-F1, val top-2)*
+
+<img width="1069" height="233" alt="Screenshot 2026-02-02 at 3 29 56 PM" src="https://github.com/user-attachments/assets/fe1e578d-25e8-4510-9647-7f0eaf320cd5" />
 
 ---
 
@@ -492,8 +489,8 @@ Total runs: **96 configurations**.
 
 Selection criterion: **best validation Macro-F1** during training (not only last epoch).
 
-**Figure to insert:** *Deep MLP — grid search ranking (best validation Macro-F1 across all runs)*  
-**Figure to insert:** *Deep MLP — hyperparameter heatmap (lr × weight decay) for fixed epochs/dropout and best architecture*
+
+<img width="699" height="387" alt="Screenshot 2026-02-02 at 3 31 31 PM" src="https://github.com/user-attachments/assets/b263aec2-cab6-4e82-b76c-8490850d5e7d" />
 
 ---
 
@@ -523,9 +520,12 @@ Metrics:
 - Balanced accuracy: **0.1302**
 - Top-2 accuracy: **0.2674**
 
-**Figure to insert:** *Deep MLP — confusion matrix (validation)*  
-**Figure to insert:** *Deep MLP — confusion matrix (test)*  
-**Figure to insert:** *Deep MLP — per-class F1 (test)*
+
+<img width="489" height="489" alt="Screenshot 2026-02-02 at 3 33 14 PM" src="https://github.com/user-attachments/assets/393d7a24-1676-4923-bd81-535215af530b" />
+
+<img width="517" height="485" alt="Screenshot 2026-02-02 at 3 33 35 PM" src="https://github.com/user-attachments/assets/49c7ec88-32f7-4f57-917e-ae3e24b659bb" />
+
+<img width="1068" height="343" alt="Screenshot 2026-02-02 at 3 33 50 PM" src="https://github.com/user-attachments/assets/f1da18aa-282e-4ea3-84e6-73300642c96c" />
 
 ---
 
@@ -552,6 +552,12 @@ This allows a direct comparison of "cost vs quality" with the baseline linear mo
 
 The MLP section demonstrates a fully manual implementation of a multi-layer neural network (forward + backward + SGD), and a proper validation-based hyperparameter search.  
 Despite increasing depth, the MLP still underperforms strongly compared to CNNs, supporting the conclusion that spatial inductive biases (convolution/pooling) are essential for microscopy texture-based classification.
+
+Deep MLP summary:
+- Config: {'hidden_sizes': (1024, 512), 'dropout': 0.0, 'epochs': 60, 'lr': 0.001, 'weight_decay': 0.0, 'seed': 42, 'image_size': 64, 'input_preprocess': 'x in [0,1] -> [-1,1] via (2x-1)'}
+- Val: acc=0.1788, macroF1=0.1471, top2=0.3229
+- Test: acc=0.1562, macroF1=0.1166, top2=0.2882
+- Inference: latency=1.164 ms/img, throughput=859.1 img/s
 
 
 ## Model 3 — Convolutional Neural Network (CNN, PyTorch layers allowed)
