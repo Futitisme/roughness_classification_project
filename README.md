@@ -722,19 +722,16 @@ $$\text{MacroF1}=\frac{1}{C}\sum_{c=1}^{C}F1_c$$
 ## What to include as figures in the report (placeholders)
 
 1. **CNN Learning Curves (train loss, val loss, val accuracy, val macro-F1, val top-2)**  
-   *Filename suggestion:* `cnn_learning_curves.png`
+<img width="1065" height="229" alt="Screenshot 2026-02-02 at 3 38 07 PM" src="https://github.com/user-attachments/assets/c79e2fef-5e06-4286-bd5b-d41cd791d275" />
 
 2. **CNN Confusion Matrix (Validation)**  
-   *Filename suggestion:* `cnn_cm_val.png`
+<img width="463" height="486" alt="Screenshot 2026-02-02 at 3 38 29 PM" src="https://github.com/user-attachments/assets/73e73d67-3169-46b8-b3af-b17cfe523482" />
 
 3. **CNN Confusion Matrix (Test)**  
-   *Filename suggestion:* `cnn_cm_test.png`
+<img width="479" height="482" alt="Screenshot 2026-02-02 at 3 38 48 PM" src="https://github.com/user-attachments/assets/527aeada-bb08-4ac6-9112-9ee48f4f2e78" />
 
 4. **CNN Per-class F1 (Test)**  
-   *Filename suggestion:* `cnn_f1_per_class_test.png`
-
-5. **Quality vs Performance plot** (e.g., Macro-F1 vs inference latency across models)  
-   *Filename suggestion:* `quality_vs_latency.png`
+<img width="1063" height="361" alt="Screenshot 2026-02-02 at 3 39 12 PM" src="https://github.com/user-attachments/assets/603f0d10-7faa-482c-99f7-790a0bcbe049" />
 
 ---
 
@@ -747,14 +744,6 @@ $$\text{MacroF1}=\frac{1}{C}\sum_{c=1}^{C}F1_c$$
   - pooling → robustness to small spatial shifts,
   - deeper hierarchy → edges → motifs → texture signatures.
 
----
-
-## Possible improvements (optional extensions for discussion)
-If required, we can additionally test:
-- **Data augmentation** (small rotations, random crops, flips, brightness/contrast jitter) to improve generalization.
-- **Batch normalization** after conv layers to stabilize optimization.
-- Larger grids: alternative channel widths, dropout values, Adam vs SGD+momentum.
-- Higher input resolution (e.g., 96×96) to preserve more texture detail (at higher compute cost).
 
 
 ## Conclusion
