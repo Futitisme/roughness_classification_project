@@ -14,7 +14,7 @@ A deep learning project for classifying surface roughness from microscope images
 
 ```bash
 cd demo
-
+pip install torch numpy pillow
 python run.py
 ```
 
