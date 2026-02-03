@@ -61,20 +61,45 @@ def set_seed(seed):
 # Dataset
 # ============================================================================
 class SurfaceRoughnessDataset(Dataset):
+    """
+    PyTorch Dataset for loading and preprocessing surface roughness images.
+    
+    Handles image loading, grayscale conversion, resizing, and normalization.
+    """
+    
     def __init__(self, df, image_size=64):
+        """
+        Initialize the dataset.
+        
+        Args:
+            df: DataFrame with 'path' and 'label' columns.
+            image_size: Target size for image resizing (default: 64x64).
+        """
         self.df = df.reset_index(drop=True)
         self.image_size = image_size
 
     def __len__(self):
+        """Return the number of samples in the dataset."""
         return len(self.df)
 
     def __getitem__(self, idx):
+        """
+        Load and preprocess a single image sample.
+        
+        Args:
+            idx: Index of the sample.
+            
+        Returns:
+            tuple: (image_tensor, label) where image is (1, H, W) float32.
+        """
         row = self.df.iloc[idx]
         path = row["path"]
         y = int(row["label"])
 
+        # Load and convert to grayscale
         img = Image.open(path).convert("L")
         img = img.resize((self.image_size, self.image_size), resample=Image.BILINEAR)
+        # Normalize to [0, 1] range
         arr = np.asarray(img, dtype=np.float32) / 255.0
         x = torch.from_numpy(arr).unsqueeze(0)
         y = torch.tensor(y, dtype=torch.long)
@@ -86,6 +111,17 @@ class SurfaceRoughnessDataset(Dataset):
 # ============================================================================
 @torch.no_grad()
 def confusion_matrix_torch(y_true, y_pred, num_classes):
+    """
+    Compute confusion matrix using PyTorch operations.
+    
+    Args:
+        y_true: Ground truth labels tensor.
+        y_pred: Predicted labels tensor.
+        num_classes: Total number of classes.
+        
+    Returns:
+        torch.Tensor: Confusion matrix of shape (num_classes, num_classes).
+    """
     y_true = y_true.view(-1).long()
     y_pred = y_pred.view(-1).long()
     cm = torch.zeros((num_classes, num_classes), dtype=torch.int64)
@@ -97,11 +133,32 @@ def confusion_matrix_torch(y_true, y_pred, num_classes):
 
 @torch.no_grad()
 def accuracy_top1(y_true, y_pred):
+    """
+    Compute top-1 accuracy.
+    
+    Args:
+        y_true: Ground truth labels.
+        y_pred: Predicted labels.
+        
+    Returns:
+        float: Accuracy as a value between 0 and 1.
+    """
     return (y_true == y_pred).float().mean().item()
 
 
 @torch.no_grad()
 def accuracy_topk(y_true, logits, k=2):
+    """
+    Compute top-k accuracy.
+    
+    Args:
+        y_true: Ground truth labels.
+        logits: Raw model outputs.
+        k: Number of top predictions to consider.
+        
+    Returns:
+        float: Top-k accuracy.
+    """
     topk = torch.topk(logits, k=k, dim=1).indices
     y_true = y_true.view(-1, 1)
     correct = (topk == y_true).any(dim=1)
@@ -110,6 +167,16 @@ def accuracy_topk(y_true, logits, k=2):
 
 @torch.no_grad()
 def per_class_prf_from_cm(cm, eps=1e-12):
+    """
+    Compute per-class precision, recall, F1-score from confusion matrix.
+    
+    Args:
+        cm: Confusion matrix tensor.
+        eps: Small constant to avoid division by zero.
+        
+    Returns:
+        dict: Contains per-class metrics and macro-averaged scores.
+    """
     cm = cm.to(torch.float32)
     tp = torch.diag(cm)
     fp = cm.sum(dim=0) - tp
@@ -132,12 +199,33 @@ def per_class_prf_from_cm(cm, eps=1e-12):
 
 
 def logsumexp(x, dim=-1, keepdim=False):
+    """
+    Numerically stable log-sum-exp computation.
+    
+    Args:
+        x: Input tensor.
+        dim: Dimension to reduce.
+        keepdim: Whether to keep the reduced dimension.
+        
+    Returns:
+        torch.Tensor: Log-sum-exp result.
+    """
     m, _ = torch.max(x, dim=dim, keepdim=True)
     y = m + torch.log(torch.sum(torch.exp(x - m), dim=dim, keepdim=True))
     return y if keepdim else y.squeeze(dim)
 
 
 def cross_entropy_from_logits(logits, y):
+    """
+    Compute cross-entropy loss from raw logits.
+    
+    Args:
+        logits: Raw model outputs of shape (batch_size, num_classes).
+        y: Ground truth labels of shape (batch_size,).
+        
+    Returns:
+        torch.Tensor: Mean cross-entropy loss.
+    """
     lse = logsumexp(logits, dim=1, keepdim=True)
     log_probs = logits - lse
     nll = -log_probs[torch.arange(logits.size(0), device=logits.device), y]
@@ -146,7 +234,22 @@ def cross_entropy_from_logits(logits, y):
 
 @torch.no_grad()
 def evaluate_model(loader, num_classes, device, model, topk=2):
-    model.eval()
+    """
+    Evaluate CNN model on a dataset and compute comprehensive metrics.
+    
+    Sets model to eval mode for proper dropout/batchnorm behavior.
+    
+    Args:
+        loader: DataLoader for the evaluation dataset.
+        num_classes: Total number of classes.
+        device: Device to run evaluation on.
+        model: PyTorch model to evaluate.
+        topk: K value for top-k accuracy.
+        
+    Returns:
+        dict: Dictionary containing loss, accuracy, F1-scores, and confusion matrix.
+    """
+    model.eval()  # Set to evaluation mode (affects dropout, batchnorm)
     total_loss = 0.0
     total_n = 0
     all_true, all_pred, all_logits = [], [], []
@@ -191,44 +294,76 @@ def evaluate_model(loader, num_classes, device, model, topk=2):
 # ============================================================================
 class CNNModel(nn.Module):
     """
-    CNN for 64x64 grayscale images with 16 classes.
+    Convolutional Neural Network for 64x64 grayscale images with 16 classes.
+    
+    Uses PyTorch nn.Module for automatic differentiation, unlike the
+    from-scratch implementations in other scripts.
     
     Architecture:
     - Conv2d(1, c1, 3) -> ReLU -> MaxPool2d(2)  -> 32x32
     - Conv2d(c1, c2, 3) -> ReLU -> MaxPool2d(2) -> 16x16
     - Conv2d(c2, c3, 3) -> ReLU -> MaxPool2d(2) -> 8x8
     - Flatten -> Linear(c3*8*8, 256) -> ReLU -> Dropout -> Linear(256, 16)
+    
+    The architecture progressively increases channel depth while reducing
+    spatial dimensions through max pooling, learning hierarchical features.
+    
+    Attributes:
+        features: Sequential container with conv layers for feature extraction.
+        classifier: Sequential container with fully connected layers for classification.
     """
+    
     def __init__(self, channels=(32, 64, 128), dropout=0.5):
+        """
+        Initialize the CNN architecture.
+        
+        Args:
+            channels: Tuple of (c1, c2, c3) channel counts for conv layers.
+            dropout: Dropout probability in the classifier.
+        """
         super().__init__()
         c1, c2, c3 = channels
 
+        # Feature extraction layers: Conv -> ReLU -> MaxPool blocks
         self.features = nn.Sequential(
+            # Block 1: 64x64 -> 32x32
             nn.Conv2d(1, c1, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2),
 
+            # Block 2: 32x32 -> 16x16
             nn.Conv2d(c1, c2, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2),
 
+            # Block 3: 16x16 -> 8x8
             nn.Conv2d(c2, c3, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2),
         )
 
-        # Input 64x64 -> after 3 pools: 8x8
+        # Classifier head: fully connected layers
+        # Input 64x64 -> after 3 max pools with stride 2: 8x8
         self.classifier = nn.Sequential(
-            nn.Flatten(),
+            nn.Flatten(),  # (batch, c3, 8, 8) -> (batch, c3*64)
             nn.Linear(c3 * 8 * 8, 256),
             nn.ReLU(),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout),  # Regularization to prevent overfitting
             nn.Linear(256, NUM_CLASSES)
         )
 
     def forward(self, x):
-        x = self.features(x)
-        x = self.classifier(x)
+        """
+        Forward pass through the network.
+        
+        Args:
+            x: Input images of shape (batch_size, 1, 64, 64).
+            
+        Returns:
+            torch.Tensor: Logits of shape (batch_size, num_classes).
+        """
+        x = self.features(x)  # Extract spatial features
+        x = self.classifier(x)  # Classify based on features
         return x
 
 
@@ -236,17 +371,43 @@ class CNNModel(nn.Module):
 # Training Functions
 # ============================================================================
 def train_cnn_one_run(train_loader, val_loader, cfg, device):
-    """Train CNN with given config and early stopping."""
+    """
+    Train CNN with given config and early stopping.
+    
+    Uses Adam optimizer and cross-entropy loss. Implements early stopping
+    based on validation macro-F1 score to prevent overfitting.
+    
+    Args:
+        train_loader: DataLoader for training data.
+        val_loader: DataLoader for validation data.
+        cfg: Dictionary containing hyperparameters:
+            - channels: Tuple of conv layer channel counts
+            - dropout: Dropout probability
+            - lr: Learning rate
+            - weight_decay: L2 regularization
+            - epochs: Maximum number of epochs
+            - patience: Early stopping patience
+        device: Device to run training on.
+        
+    Returns:
+        tuple: (model, history, best_score, best_epoch) where model has
+            best weights loaded, history contains metrics per epoch,
+            best_score is the best validation macro-F1, and best_epoch
+            is when it was achieved.
+    """
+    # Initialize model, loss, and optimizer
     model = CNNModel(channels=cfg["channels"], dropout=cfg["dropout"]).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
 
+    # Track training metrics
     history = {
         "train_loss": [], "val_loss": [],
         "val_acc": [], "val_macro_f1": [], "val_balanced_acc": [], "val_top2_acc": [],
         "sec_per_epoch": []
     }
 
+    # Early stopping state
     best_state = None
     best_score = -1.0
     best_epoch = -1
@@ -255,16 +416,20 @@ def train_cnn_one_run(train_loader, val_loader, cfg, device):
 
     for ep in range(1, cfg["epochs"] + 1):
         t0 = time.time()
-        model.train()
+        model.train()  # Enable dropout for training
 
         loss_sum, n_seen = 0.0, 0
+        # Training loop over batches
         for xb, yb in train_loader:
             xb = xb.to(device)
             yb = yb.to(device)
 
-            optimizer.zero_grad(set_to_none=True)
+            # Forward pass
+            optimizer.zero_grad(set_to_none=True)  # More efficient than zero_grad()
             logits = model(xb)
             loss = criterion(logits, yb)
+            
+            # Backward pass and parameter update
             loss.backward()
             optimizer.step()
 
@@ -274,10 +439,12 @@ def train_cnn_one_run(train_loader, val_loader, cfg, device):
 
         train_loss = loss_sum / n_seen
 
+        # Evaluate on validation set
         val_metrics = evaluate_model(val_loader, num_classes=NUM_CLASSES, device=device, model=model)
 
         dt = time.time() - t0
 
+        # Record metrics
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_metrics["loss"])
         history["val_acc"].append(val_metrics["acc"])
@@ -291,7 +458,7 @@ def train_cnn_one_run(train_loader, val_loader, cfg, device):
               f"val_loss={val_metrics['loss']:.4f} | val_acc={val_metrics['acc']:.4f} | "
               f"val_macroF1={val_metrics['macro_f1']:.4f} | time={dt:.2f}s")
 
-        # Early stopping on macro-F1
+        # Early stopping: save best model and check patience
         if score > best_score:
             best_score = score
             best_epoch = ep
@@ -304,17 +471,27 @@ def train_cnn_one_run(train_loader, val_loader, cfg, device):
                       f"Best epoch={best_epoch}, best_macroF1={best_score:.4f}")
                 break
 
-    # Load best weights
+    # Restore best model weights
     model.load_state_dict(best_state)
     return model, history, best_score, best_epoch
 
 
 def plot_learning_curves(history, title_prefix="CNN"):
-    """Plot learning curves."""
+    """
+    Plot training and validation metrics over epochs.
+    
+    Creates a 4-panel figure showing loss, accuracy, macro-F1, and top-2
+    accuracy curves to visualize training progress.
+    
+    Args:
+        history: Dictionary containing lists of metrics per epoch.
+        title_prefix: Prefix for plot titles and output filename.
+    """
     epochs = np.arange(1, len(history["train_loss"]) + 1)
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4))
 
+    # Loss curves (train vs validation)
     axes[0].plot(epochs, history["train_loss"], marker="o", label="train")
     axes[0].plot(epochs, history["val_loss"], marker="o", label="val")
     axes[0].set_title(f"{title_prefix}: Loss")
@@ -323,18 +500,21 @@ def plot_learning_curves(history, title_prefix="CNN"):
     axes[0].legend()
     axes[0].grid(True)
 
+    # Validation accuracy
     axes[1].plot(epochs, history["val_acc"], marker="o")
     axes[1].set_title(f"{title_prefix}: Val Accuracy")
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Accuracy")
     axes[1].grid(True)
 
+    # Macro-F1 score (primary metric for model selection)
     axes[2].plot(epochs, history["val_macro_f1"], marker="o")
     axes[2].set_title(f"{title_prefix}: Val Macro-F1")
     axes[2].set_xlabel("Epoch")
     axes[2].set_ylabel("Macro-F1")
     axes[2].grid(True)
 
+    # Top-2 accuracy
     axes[3].plot(epochs, history["val_top2_acc"], marker="o")
     axes[3].set_title(f"{title_prefix}: Val Top-2 Accuracy")
     axes[3].set_xlabel("Epoch")
@@ -347,7 +527,14 @@ def plot_learning_curves(history, title_prefix="CNN"):
 
 
 def plot_confusion_matrix(cm, title, save_path=None):
-    """Plot confusion matrix."""
+    """
+    Visualize confusion matrix as a heatmap.
+    
+    Args:
+        cm: Confusion matrix (torch.Tensor or numpy array).
+        title: Title for the plot.
+        save_path: Optional path to save the figure.
+    """
     cm_np = cm.numpy() if isinstance(cm, torch.Tensor) else np.array(cm)
     plt.figure(figsize=(8, 6))
     plt.imshow(cm_np, aspect="auto", cmap="Blues")
@@ -362,27 +549,40 @@ def plot_confusion_matrix(cm, title, save_path=None):
 
 
 def main():
+    """
+    Main entry point for CNN training with grid search.
+    
+    Performs hyperparameter grid search over architecture (channel counts),
+    dropout, learning rate, and weight decay. Uses early stopping to prevent
+    overfitting. Saves the best model checkpoint and generates visualization plots.
+    
+    The CNN achieves significantly better performance (~60% accuracy) compared
+    to Softmax Regression (~10%) and MLP (~16%) due to its ability to learn
+    spatial hierarchies of features from the surface roughness images.
+    """
     print("=" * 60)
     print("CNN Training with Grid Search")
     print("=" * 60)
 
-    # Setup
+    # Setup reproducibility and device
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Load data
+    # Load preprocessed data
     print("\nLoading data...")
     df_train = pd.read_csv(DATA_DIR / "train.csv")
     df_val = pd.read_csv(DATA_DIR / "val.csv")
     df_test = pd.read_csv(DATA_DIR / "test.csv")
 
+    # Load class mappings
     mappings = torch.load(DATA_DIR / "class_mappings.pt")
     class_to_idx = mappings["class_to_idx"]
     idx_to_class = mappings["idx_to_class"]
 
+    # Create datasets and dataloaders
     train_ds = SurfaceRoughnessDataset(df_train, image_size=IMAGE_SIZE)
     val_ds = SurfaceRoughnessDataset(df_val, image_size=IMAGE_SIZE)
     test_ds = SurfaceRoughnessDataset(df_test, image_size=IMAGE_SIZE)
