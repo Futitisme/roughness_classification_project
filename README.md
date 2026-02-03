@@ -82,20 +82,6 @@ This script:
 - Uses early stopping with patience=8
 - Saves model to `checkpoints/cnn_best.pt`
 
-### Step 5: Train CNN with Best Hyperparameters (Production)
-```bash
-python 05_train_cnn_best.py
-```
-This script:
-- Trains CNN with the best hyperparameters found in the notebook:
-  - channels: (32, 64, 128)
-  - dropout: 0.5
-  - lr: 1e-3
-  - weight_decay: 1e-4
-  - epochs: 60 (with early stopping, patience=8)
-- Saves final production model to `checkpoints/cnn_final.pt`
-- Includes inference benchmark
-
 ## Model Performance Summary
 
 | Model | Val Accuracy | Val Macro-F1 | Test Accuracy | Test Macro-F1 |
