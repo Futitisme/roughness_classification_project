@@ -10,19 +10,13 @@ scripts/
 ├── 02_train_softmax.py       # Train Softmax Regression (baseline)
 ├── 03_train_mlp.py           # Train Deep MLP with grid search
 ├── 04_train_cnn.py           # Train CNN with grid search
-├── 05_train_cnn_best.py      # Train CNN with best hyperparameters
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # This file
 ├── data/                     # Generated after running 01_data_preparation.py
-│   ├── train.csv
-│   ├── val.csv
-│   ├── test.csv
-│   └── class_mappings.pt
 └── checkpoints/              # Generated after training
     ├── softmax_best.pt
     ├── mlp_deep_best.pt
     ├── cnn_best.pt
-    ├── cnn_final.pt
     └── *.png (plots)
 ```
 
