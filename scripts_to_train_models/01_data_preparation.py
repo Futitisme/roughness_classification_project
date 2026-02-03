@@ -48,10 +48,22 @@ def set_seed(seed):
 
 
 def download_dataset():
-    """Download dataset via kagglehub and locate Cropped100x folder."""
+    """
+    Download dataset via kagglehub and locate Cropped100x folder.
+    
+    Uses kagglehub to download the Surface Roughness Classification dataset
+    from Kaggle. Automatically installs kagglehub if not present.
+    
+    Returns:
+        Path: Path to the Cropped100x directory containing class subfolders.
+    
+    Raises:
+        FileNotFoundError: If Cropped100x folder is not found in downloaded data.
+    """
     try:
         import kagglehub
     except ImportError:
+        # Auto-install kagglehub if missing
         print("Installing kagglehub...")
         os.system(f"{sys.executable} -m pip install -q kagglehub")
         import kagglehub
@@ -72,10 +84,25 @@ def download_dataset():
 
 
 def verify_dataset(cropped_dir):
-    """Verify dataset structure and show basic statistics."""
+    """
+    Verify dataset structure and show basic statistics.
+    
+    Scans the dataset directory to count images per class and validates
+    that we have exactly 16 classes with non-zero images each.
+    
+    Args:
+        cropped_dir: Path to the Cropped100x directory.
+        
+    Returns:
+        OrderedDict: Mapping of class names to image counts.
+        
+    Raises:
+        AssertionError: If dataset doesn't have exactly 16 classes or has empty classes.
+    """
     image_exts = {".jpg", ".jpeg", ".png"}
     class_stats = OrderedDict()
 
+    # Count images in each class subdirectory
     for class_dir in sorted(cropped_dir.iterdir()):
         if not class_dir.is_dir():
             continue
@@ -89,7 +116,7 @@ def verify_dataset(cropped_dir):
     for cls, cnt in class_stats.items():
         print(f"  class {cls}: {cnt}")
 
-    # Sanity checks
+    # Sanity checks to ensure dataset integrity
     assert len(class_stats) == 16, "Expected exactly 16 classes"
     assert all(v > 0 for v in class_stats.values()), "Some class has zero images"
 
@@ -97,10 +124,25 @@ def verify_dataset(cropped_dir):
 
 
 def build_dataframe(cropped_dir):
-    """Build DataFrame with image paths and labels."""
+    """
+    Build DataFrame with image paths and labels.
+    
+    Creates a pandas DataFrame containing paths to all images and their
+    corresponding class labels. Also creates bidirectional class mappings.
+    
+    Args:
+        cropped_dir: Path to the Cropped100x directory.
+        
+    Returns:
+        tuple: (df, class_to_idx, idx_to_class) where:
+            - df: DataFrame with columns ['path', 'class_name', 'label']
+            - class_to_idx: Dict mapping class names to integer indices
+            - idx_to_class: Dict mapping integer indices to class names
+    """
     image_exts = {".jpg", ".jpeg", ".png"}
     rows = []
 
+    # Collect all image paths with their class names
     for class_dir in sorted(cropped_dir.iterdir()):
         if not class_dir.is_dir():
             continue
@@ -119,6 +161,7 @@ def build_dataframe(cropped_dir):
     class_to_idx = {cls: i for i, cls in enumerate(class_names)}
     idx_to_class = {i: cls for cls, i in class_to_idx.items()}
 
+    # Add numeric label column to DataFrame
     df["label"] = df["class_name"].map(class_to_idx)
 
     print(f"\nDataFrame shape: {df.shape}")
@@ -132,10 +175,20 @@ def build_dataframe(cropped_dir):
 def stratified_split(df, seed=SEED):
     """
     Stratified train/val/test split (70/15/15).
+    
+    Splits the dataset maintaining class proportions in each split.
+    This ensures balanced representation across training, validation, and test sets.
+    
+    Args:
+        df: DataFrame with 'label' column for stratification.
+        seed: Random seed for reproducibility.
+        
+    Returns:
+        tuple: (df_train, df_val, df_test) DataFrames with reset indices.
     """
     np.random.seed(seed)
 
-    # 1) test split: 15% of total
+    # First split: separate test set (15% of total)
     df_trainval, df_test = train_test_split(
         df,
         test_size=0.15,
@@ -143,7 +196,8 @@ def stratified_split(df, seed=SEED):
         stratify=df["label"]
     )
 
-    # 2) val split: 15% of total => 0.15 / 0.85 of trainval
+    # Second split: separate validation from training
+    # Need 15% of total, which is 0.15/0.85 of the remaining trainval
     val_ratio_within_trainval = 0.15 / 0.85
 
     df_train, df_val = train_test_split(
@@ -153,7 +207,7 @@ def stratified_split(df, seed=SEED):
         stratify=df_trainval["label"]
     )
 
-    # Reset indices
+    # Reset indices for clean iteration
     df_train = df_train.reset_index(drop=True)
     df_val = df_val.reset_index(drop=True)
     df_test = df_test.reset_index(drop=True)
@@ -170,31 +224,55 @@ def stratified_split(df, seed=SEED):
 class SurfaceRoughnessDataset(Dataset):
     """
     PyTorch Dataset for Surface Roughness images.
+    
+    Handles image loading, preprocessing, and conversion to tensors.
     Converts to grayscale, resizes, and normalizes to [0,1].
     Output: (1, H, W) float32 tensor.
+    
+    Attributes:
+        df: DataFrame containing 'path' and 'label' columns.
+        image_size: Target size for resizing images (square).
     """
+    
     def __init__(self, df, image_size=64):
+        """
+        Initialize the dataset.
+        
+        Args:
+            df: DataFrame with 'path' and 'label' columns.
+            image_size: Target image size (default: 64x64).
+        """
         self.df = df.reset_index(drop=True)
         self.image_size = image_size
 
     def __len__(self):
+        """Return the total number of samples in the dataset."""
         return len(self.df)
 
     def __getitem__(self, idx):
+        """
+        Load and preprocess a single image.
+        
+        Args:
+            idx: Index of the sample to retrieve.
+            
+        Returns:
+            tuple: (x, y) where x is the image tensor (1, H, W) and y is the label.
+        """
         row = self.df.iloc[idx]
         path = row["path"]
         y = int(row["label"])
 
-        # Read image
-        img = Image.open(path).convert("L")  # grayscale
+        # Read image and convert to grayscale
+        img = Image.open(path).convert("L")
 
-        # Resize
+        # Resize to target dimensions
         img = img.resize((self.image_size, self.image_size), resample=Image.BILINEAR)
 
-        # To numpy [0,1]
+        # Convert to numpy array and normalize to [0,1] range
         arr = np.asarray(img, dtype=np.float32) / 255.0  # (H,W)
 
-        # To torch tensor (1,H,W)
+        # Convert to PyTorch tensor with channel dimension
         x = torch.from_numpy(arr).unsqueeze(0)  # (1,H,W), float32
         y = torch.tensor(y, dtype=torch.long)   # scalar long
 
@@ -202,15 +280,33 @@ class SurfaceRoughnessDataset(Dataset):
 
 
 def create_dataloaders(df_train, df_val, df_test, image_size=IMAGE_SIZE):
-    """Create PyTorch DataLoaders."""
+    """
+    Create PyTorch DataLoaders for training, validation, and testing.
+    
+    Wraps DataFrames into Dataset objects and creates DataLoaders with
+    appropriate batch sizes and shuffling settings.
+    
+    Args:
+        df_train: Training DataFrame.
+        df_val: Validation DataFrame.
+        df_test: Test DataFrame.
+        image_size: Target image size for preprocessing.
+        
+    Returns:
+        tuple: (train_ds, val_ds, test_ds, train_loader, val_loader, test_loader)
+    """
+    # Create Dataset objects
     train_ds = SurfaceRoughnessDataset(df_train, image_size=image_size)
     val_ds = SurfaceRoughnessDataset(df_val, image_size=image_size)
     test_ds = SurfaceRoughnessDataset(df_test, image_size=image_size)
 
+    # Create DataLoaders with appropriate settings
+    # Training: shuffle=True for randomization
     train_loader = DataLoader(
         train_ds, batch_size=BATCH_SIZE_TRAIN, shuffle=True,
         num_workers=NUM_WORKERS, pin_memory=True
     )
+    # Validation/Test: shuffle=False for consistent evaluation
     val_loader = DataLoader(
         val_ds, batch_size=BATCH_SIZE_VAL, shuffle=False,
         num_workers=NUM_WORKERS, pin_memory=True
@@ -220,7 +316,7 @@ def create_dataloaders(df_train, df_val, df_test, image_size=IMAGE_SIZE):
         num_workers=NUM_WORKERS, pin_memory=True
     )
 
-    # Quick sanity check
+    # Quick sanity check to verify data loading works correctly
     xb, yb = next(iter(train_loader))
     print(f"\nDataLoader sanity check:")
     print(f"  x batch: {xb.shape}, {xb.dtype}, min/max: {float(xb.min()):.4f}/{float(xb.max()):.4f}")
@@ -230,15 +326,29 @@ def create_dataloaders(df_train, df_val, df_test, image_size=IMAGE_SIZE):
 
 
 def save_processed_data(df_train, df_val, df_test, class_to_idx, idx_to_class, output_dir):
-    """Save processed DataFrames and mappings."""
+    """
+    Save processed DataFrames and class mappings to disk.
+    
+    Exports the split DataFrames as CSV files and class mappings as a
+    PyTorch file for use by training scripts.
+    
+    Args:
+        df_train: Training DataFrame.
+        df_val: Validation DataFrame.
+        df_test: Test DataFrame.
+        class_to_idx: Dict mapping class names to indices.
+        idx_to_class: Dict mapping indices to class names.
+        output_dir: Directory to save the processed data.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Save DataFrames as CSV files
     df_train.to_csv(output_dir / "train.csv", index=False)
     df_val.to_csv(output_dir / "val.csv", index=False)
     df_test.to_csv(output_dir / "test.csv", index=False)
 
-    # Save class mappings
+    # Save class mappings as PyTorch file for easy loading
     mappings = {
         "class_to_idx": class_to_idx,
         "idx_to_class": idx_to_class
@@ -253,32 +363,46 @@ def save_processed_data(df_train, df_val, df_test, class_to_idx, idx_to_class, o
 
 
 def main():
+    """
+    Main entry point for data preparation pipeline.
+    
+    Orchestrates the complete data preparation workflow:
+    1. Downloads dataset from Kaggle
+    2. Verifies dataset structure
+    3. Builds DataFrame with paths and labels
+    4. Performs stratified train/val/test split
+    5. Creates PyTorch DataLoaders
+    6. Saves processed data for training scripts
+    
+    Returns:
+        dict: Dictionary containing all processed data and DataLoaders.
+    """
     print("=" * 60)
     print("Surface Roughness Classification - Data Preparation")
     print("=" * 60)
 
-    # Set seeds
+    # Set seeds for reproducibility
     set_seed(SEED)
     print(f"\nSeed set to: {SEED}")
 
-    # Download dataset
+    # Download dataset from Kaggle
     cropped_dir = download_dataset()
 
-    # Verify dataset
+    # Verify dataset structure and count images
     class_stats = verify_dataset(cropped_dir)
 
-    # Build DataFrame
+    # Build DataFrame with image paths and labels
     df, class_to_idx, idx_to_class = build_dataframe(cropped_dir)
 
-    # Stratified split
+    # Perform stratified train/val/test split
     df_train, df_val, df_test = stratified_split(df)
 
-    # Create DataLoaders
+    # Create PyTorch DataLoaders for efficient batching
     train_ds, val_ds, test_ds, train_loader, val_loader, test_loader = create_dataloaders(
         df_train, df_val, df_test
     )
 
-    # Save processed data
+    # Save processed data for use by training scripts
     save_processed_data(df_train, df_val, df_test, class_to_idx, idx_to_class, OUTPUT_DIR)
 
     print("\n" + "=" * 60)
